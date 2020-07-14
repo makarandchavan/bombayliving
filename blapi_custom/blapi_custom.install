@@ -1,0 +1,24 @@
+<?php
+
+/**
+ * @file
+ * Install and uninstall functions for the bombayliving.
+ */
+
+/**
+ * Implements hook_install().
+ */
+function blapi_custom_install() {
+	// Set the weight of the mymodule.module to a value lower than views_datasource's views_json module.
+  db_update('system')
+   ->fields(array('weight' => -1))
+   ->condition('name', 'blapi_custom')
+   ->execute();
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function blapi_custom_uninstall() {
+
+}

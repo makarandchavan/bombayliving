@@ -1,0 +1,814 @@
+<?php
+//include_once "userregcustome.form.inc";
+require_once $_SERVER["DOCUMENT_ROOT"] . '/api/sites/all/modules/custom/mycustome/vendor/autoload.php';
+
+function mycustome_menu()
+{
+
+                                     
+           $items["facebook-callback"]=array(
+                                              'title' => 'Facebook Callbook',
+                                                'description' => 'Facebook callback details',
+                                                'page callback' => 'facebook_callback_fun',
+                                                'access arguments' => array('administer shortcuts'),
+                                                'access callback' => true,
+                                                'type' => MENU_CALLBACK,
+                                               
+                                         );   
+
+         
+          $items["blapi/get-fb-login-url"]=array(
+                              'title' => 'Facebook URL',
+                                'description' => 'Facebook URL details',
+                                'page callback' => 'facebook_urlcallback_fun',
+                                'access arguments' => array('administer shortcuts'),
+                                'access callback' => true,
+                                'type' => MENU_CALLBACK,
+                                
+                          );       
+             $items["blapi/get-session-detail"]=array(
+                              'title' => 'get session detail',
+                                'description' => 'get session detail',
+                                'page callback' => 'get_seesion_detail_cust',
+                                'access arguments' => array('administer shortcuts'),
+                                'access callback' => true,
+                                'type' => MENU_CALLBACK,
+                                
+                          );                
+
+                    $items["blapi/social-login-url"]=array(
+                              'title' => 'Facebook Login',
+                                'description' => 'Facebook Login',
+                                'page callback' => 'login_via_fb_fun',
+                                'access arguments' => array('administer shortcuts'),
+                                'access callback' => true,
+                                'type' => MENU_CALLBACK,
+                                
+                          );   
+
+                    $items["blapi/login-via-google"]=array(
+                              'title' => 'Google Login',
+                                'description' => 'Google Login',
+                                'page callback' => 'login_via_google_fun',
+                                'access arguments' => array('administer shortcuts'),
+                                'access callback' => true,
+                                'type' => MENU_CALLBACK,
+                                
+                          );                                                                                                        
+
+     /*   $items["view-user-profile"]=array(
+                                          'title' => 'View User Profile',
+                                            'description' => 'Custom module update',
+                                            'page callback' => 'view_other_user_profile',
+                                            'page arguments' => array(1),
+                                            'access callback' => 'user_access',
+                                            'access arguments' => Array("View Other user profiles"),
+                                     );         */                            
+    return $items;                                 
+}
+
+
+function mycustome_permission() 
+{
+           
+  $perms = array(
+    'Contact Request List' => array(
+                                      'title' => 'Contact Request List',
+                                    )                                 
+  ); 
+  //$perms=true;
+
+  return $perms;
+}
+function get_seesion_detail_cust()
+{
+
+  $uid=$_GET["uid"];
+  $query="select * from sessions where uid=:uid";
+  $result=db_query($query,array("uid" => $uid))->fetchAll();
+      list($index,$userOb)=each($result);
+    session_id($userOb->sid);
+        drupal_session_started($userOb->sid);
+
+
+  drupal_page_is_cacheable(FALSE);
+  drupal_add_http_header('Content-Type', 'text/plain');
+  //print drupal_get_token('services');
+  //echo '<br> session name '.session_name();
+
+ 
+  $user=user_load($uid);
+  $returnData["sessid"]=$userOb->ssid;
+  $returnData["session_name"]=session_name();
+  $returnData["token"]=drupal_get_token('services');
+  $returnData["user"]=$user;
+  print json_encode($returnData);
+  exit();
+
+}
+
+function login_via_google_fun()
+{
+  global $user,$base_url;
+  $base_url2="https://bombayliving.co.in";
+  if($_POST)
+  {
+
+     $dbase_prefix = $GLOBALS['databases']['default']['default']['prefix'];
+      $google_account_id=$_POST["google_account_id"];
+      $google_first_name=$_POST["google_first_name"];
+      $google_last_name=$_POST["google_last_name"];
+      $google_email=$_POST["google_email"];
+
+      //check email id is valid or not
+
+      if(!preg_match("^[_a-z0-9-]+(\.[_a-z0-9-]+)*@[a-z0-9-]+(\.[a-z0-9-]+)*(\.[a-z]{2,3})$^", $google_email)) 
+      { 
+          $errormessage["error"]["message"]="Please check email id is not valid";
+          $errormessage["error"]["code"]=404;
+           print json_encode($errormessage);
+          exit();
+      } 
+      if(empty($google_first_name))
+      {
+        $errormessage["error"]["message"]="Please check first name is not valid";
+          $errormessage["error"]["code"]=404;
+           print json_encode($errormessage);
+          exit();
+
+      }
+
+      //check if field is created or not
+
+       $tablePrefix=$dbase_prefix;
+                $queryCheck="SHOW COLUMNS FROM ".$tablePrefix."users LIKE :fieldName";
+                
+                $checkTableResult=db_query($queryCheck,array('fieldName' => 'google_account_id'))->fetchAll();
+                
+                if(count($checkTableResult)==0)
+                {
+                   $addColumnQuery="alter table ".$tablePrefix."users add column google_account_id mediumtext null";
+                    db_query($addColumnQuery);
+
+                }
+
+
+                $queryCheck="SHOW COLUMNS FROM ".$tablePrefix."users LIKE :fieldName";                
+                $checkTableResult=db_query($queryCheck,array('fieldName' => 'google_first_name'))->fetchAll();                
+                if(count($checkTableResult)==0)
+                {
+                   $addColumnQuery="alter table ".$tablePrefix."users add column google_first_name varchar(50) null";
+                    db_query($addColumnQuery);
+                }
+
+                $queryCheck="SHOW COLUMNS FROM ".$tablePrefix."users LIKE :fieldName";                
+                $checkTableResult=db_query($queryCheck,array('fieldName' => 'google_last_name'))->fetchAll();                
+                if(count($checkTableResult)==0)
+                {
+                    $addColumnQuery="alter table ".$tablePrefix."users add column google_last_name varchar(50) null";
+                    db_query($addColumnQuery);
+                }
+
+                $queryCheck="SHOW COLUMNS FROM ".$tablePrefix."users LIKE :fieldName";                
+                $checkTableResult=db_query($queryCheck,array('fieldName' => 'google_email'))->fetchAll();                
+                if(count($checkTableResult)==0)
+                {
+                    $addColumnQuery="alter table ".$tablePrefix."users add column google_email varchar(50) null";
+                    db_query($addColumnQuery);
+                }
+
+
+      //check user already exist or not by email,first_name,last_name
+
+       $checkTokenAlreadyQuery="select * from ".$tablePrefix."users where google_email=:google_email and google_first_name=:google_first_name and google_last_name=:google_last_name";
+       $checkTokenResult= db_query($checkTokenAlreadyQuery,array('google_email' => $google_email,'google_first_name' => $google_first_name,'google_last_name' => $google_last_name  ))->fetchAll();
+            
+                if(count($checkTokenResult)>0)
+                {
+                   //else logged in
+
+                    list($index,$userDataOb)=each($checkTokenResult);
+                    $userId=$userDataOb->uid;
+                   // $page_list_html.="<br> user id ".$userId;
+                    //  $user = \Drupal\user\Entity\User::load($userId);
+                     // user_login_finalize($user);
+                    //add redirect code here
+                    $user = user_load($userId);
+                     //  user_login_finalize($user);
+                           $form_state['uid'] = $user->uid;      
+                           user_login_submit(array(), $form_state);
+                           header('Location: ' . $base_url2);
+                            exit();
+
+                }
+                else
+                {
+                 // $insertQuery="insert into ".$tablePrefix."users (google_first_name,google_last_name,google_email,google_account_id)values(:google_first_name,:google_last_name,:google_email,:google_account_id)";
+                 // db_query($insertQuery,array('google_first_name' => $google_first_name,'google_last_name' => $google_last_name,'google_email' => $google_email,'google_account_id' => $google_account_id));
+                   //if already not exist then  create user and login 
+
+                   $password = user_password(8);
+
+ //,
+    //3 => 'custom role',
+$new_user = array(
+  'name' => $google_first_name,
+  'pass' => $password, // note: do not md5 the password
+  'mail' => $google_email,
+  'status' => 1,
+  'init' => $google_email,
+  'roles' => array(
+    DRUPAL_AUTHENTICATED_RID => 'authenticated user'
+  ),
+);
+ 
+// The first parameter is sent blank so a new user is created.
+$account = user_save('', $new_user);
+//echo 'new user created!<pre>';
+//print_r($account);
+//echo '</pre>';
+//exit();
+
+
+//echo '<br> we are here!';
+   $hashthepass="newpass#1";
+    require_once DRUPAL_ROOT."/".variable_get("password_inc", "includes/password.inc");
+    $hashthepass = user_hash_password(trim($hashthepass));
+
+     if (!$hashthepass) {
+      return FALSE;
+    }
+    else {
+      db_update("users")
+        ->fields(array(
+          "pass" => $hashthepass
+        ))
+        ->condition("uid", $account->uid)       
+        ->execute();
+    }
+         
+         $updateQuery="update ".$tablePrefix."users set google_first_name=:google_first_name,google_last_name=:google_last_name,google_account_id=:google_account_id,google_email=:google_email where uid=:uid";
+         db_query($updateQuery,array('google_first_name' => $google_first_name,'google_last_name' => $google_last_name,'google_account_id' => $google_account_id,'google_email' => $google_email,'uid' => $account->uid));
+
+                 
+                           $form_state["uid"] = $account->uid;      
+                           user_login_submit(array(), $form_state);
+                      
+                           header('Location: ' . $base_url2);
+                            exit();
+
+                }
+      
+     
+
+
+   }
+
+
+
+ 
+
+  
+
+}
+
+function login_via_fb_fun()
+{
+  global $user,$base_url;
+  $base_url2="https://bombayliving.co.in";
+
+   if($_POST)
+   {
+     $dbase_prefix = $GLOBALS['databases']['default']['default']['prefix'];
+      $fb_account_id=$_POST["fb_account_id"];
+      $fb_first_name=$_POST["fb_first_name"];
+      $fb_last_name=$_POST["fb_last_name"];
+      $fb_email=$_POST["fb_email"];
+
+      //check email id is valid or not
+
+      if(!preg_match("^[_a-z0-9-]+(\.[_a-z0-9-]+)*@[a-z0-9-]+(\.[a-z0-9-]+)*(\.[a-z]{2,3})$^", $fb_email)) 
+      { 
+          $errormessage["error"]["message"]="Please check email id is not valid";
+          $errormessage["error"]["code"]=404;
+           print json_encode($errormessage);
+          exit();
+      } 
+      if(empty($fb_first_name))
+      {
+        $errormessage["error"]["message"]="Please check first name is not valid";
+          $errormessage["error"]["code"]=404;
+           print json_encode($errormessage);
+          exit();
+
+      }
+
+      //check if field is created or not
+
+       $tablePrefix=$dbase_prefix;
+                $queryCheck="SHOW COLUMNS FROM ".$tablePrefix."users LIKE :fieldName";
+                
+                $checkTableResult=db_query($queryCheck,array('fieldName' => 'fb_account_id'))->fetchAll();
+                
+                if(count($checkTableResult)==0)
+                {
+                   $addColumnQuery="alter table ".$tablePrefix."users add column fb_account_id mediumtext null";
+                    db_query($addColumnQuery);
+
+                }
+
+
+                $queryCheck="SHOW COLUMNS FROM ".$tablePrefix."users LIKE :fieldName";                
+                $checkTableResult=db_query($queryCheck,array('fieldName' => 'fb_first_name'))->fetchAll();                
+                if(count($checkTableResult)==0)
+                {
+                   $addColumnQuery="alter table ".$tablePrefix."users add column fb_first_name varchar(50) null";
+                    db_query($addColumnQuery);
+                }
+
+                $queryCheck="SHOW COLUMNS FROM ".$tablePrefix."users LIKE :fieldName";                
+                $checkTableResult=db_query($queryCheck,array('fieldName' => 'fb_last_name'))->fetchAll();                
+                if(count($checkTableResult)==0)
+                {
+                    $addColumnQuery="alter table ".$tablePrefix."users add column fb_last_name varchar(50) null";
+                    db_query($addColumnQuery);
+                }
+
+                   $queryCheck="SHOW COLUMNS FROM ".$tablePrefix."users LIKE :fieldName";                
+                $checkTableResult=db_query($queryCheck,array('fieldName' => 'fb_email'))->fetchAll();                
+                if(count($checkTableResult)==0)
+                {
+                    $addColumnQuery="alter table ".$tablePrefix."users add column fb_email varchar(50) null";
+                    db_query($addColumnQuery);
+                }
+
+
+      //check user already exist or not by email,first_name,last_name
+
+       $checkTokenAlreadyQuery="select * from ".$tablePrefix."users where mail=:fb_email ";
+       $checkTokenResult= db_query($checkTokenAlreadyQuery,array('fb_email' => $fb_email  ))->fetchAll();
+            
+                if(count($checkTokenResult)>0)
+                {
+                   //else logged in
+
+                    list($index,$userDataOb)=each($checkTokenResult);
+                    $userId=$userDataOb->uid;
+                   // $page_list_html.="<br> user id ".$userId;
+                    //  $user = \Drupal\user\Entity\User::load($userId);
+                     // user_login_finalize($user);
+                    //add redirect code here
+                    $user = user_load($userId);
+                     //  user_login_finalize($user);
+
+                           $form_state['uid'] = $user->uid;      
+                         user_login_submit(array(), $form_state);
+
+
+ $data = array('username' => $fb_email, 'password' => 'newpass#1');
+
+$options = array(
+  'method' => 'POST',
+  'data' => drupal_http_build_query($data),
+  'headers' => array('Content-Type' => 'application/x-www-form-urlencoded'),
+  
+);
+
+//$result = drupal_http_request('https://bombayliving.co.in/api/blapi/user/login', $options);
+
+
+                    
+  //                print json_encode($result->data);
+    $returData["uid"]=$user->uid;
+          
+                    print  json_encode($returData);
+                      exit();
+                          
+
+                           
+                          // echo 'exitings<pre>';
+                          //  print_r($existingUser->session);
+                          // print_r($existingUser);
+                         //  echo '</pre>';
+                          // header('Location: ' . $base_url2);
+                          //  exit();
+
+                }
+                else
+                {
+                  //$insertQuery="insert into ".$tablePrefix."users (fb_first_name,fb_last_name,fb_email,fb_account_id)values(:fb_first_name,:fb_last_name,:fb_email,:fb_account_id)";
+                  //db_query($insertQuery,array('fb_first_name' => $fb_first_name,'fb_last_name' => $fb_last_name,'fb_email' => $fb_email,'fb_account_id' => $fb_account_id));
+                   //if already not exist then  create user and login 
+
+                   $password = user_password(8);
+
+ //,
+    //3 => 'custom role',
+$new_user = array(
+  'name' => $fb_email,
+  'pass' => $password, // note: do not md5 the password
+  'mail' => $fb_email,
+  'status' => 1,
+  'init' => $fb_email,
+  'roles' => array(
+    DRUPAL_AUTHENTICATED_RID => 'authenticated user'
+  ),
+);
+ 
+// The first parameter is sent blank so a new user is created.
+$account = user_save('', $new_user);
+//echo 'new user created!<pre>';
+//print_r($account);
+//echo '</pre>';
+//exit();
+
+
+//echo '<br> we are here!';
+   $hashthepass="newpass#1";
+    require_once DRUPAL_ROOT."/".variable_get("password_inc", "includes/password.inc");
+    $hashthepass = user_hash_password(trim($hashthepass));
+
+     if (!$hashthepass) {
+      return FALSE;
+    }
+    else {
+      db_update("users")
+        ->fields(array(
+          "pass" => $hashthepass
+        ))
+        ->condition("uid", $account->uid)       
+        ->execute();
+    }
+
+    //$insertQuery="insert into ".$tablePrefix."users (fb_first_name,fb_last_name,fb_email,fb_account_id)values(:fb_first_name,:fb_last_name,:fb_email,:fb_account_id)";
+   // $updateQuery="update ".$tablePrefix."users set fb_first_name=:fb_first_name,fb_last_name=:fb_last_name,fb_account_id=:fb_account_id,fb_email=:fb_email where uid=:uid";
+   // db_query($updateQuery,array('fb_first_name' => $fb_first_name,'fb_last_name' => $fb_last_name,'fb_account_id' => $fb_account_id,'fb_email' => $fb_email,'uid' => $account->uid));
+   $existingUser = user_load($account->uid);
+   $existingUser->field_first_name['und'][0]['value'] = $fb_first_name;
+   $existingUser->field_last_name['und'][0]['value'] = $fb_last_name;
+   $existingUser->field_social_account_id['und'][0]['value'] = $fb_account_id;
+   user_save($existingUser);
+                         
+                     
+
+                 
+                          $form_state["uid"] = $account->uid;      
+                          user_login_submit(array(), $form_state);
+                               user_login_finalize($existingUser);
+
+                       $data = array('username' => $fb_email, 'password' => 'newpass#1');
+
+$options = array(
+  'method' => 'POST',
+  'data' => drupal_http_build_query($data),
+  'headers' => array('Content-Type' => 'application/x-www-form-urlencoded'),
+  
+);
+
+//$sessionTableQuery="select sid from sessions where uid=:uid";
+//$result=drupal_http_request("https://bombayliving.co.in/api/blapi/get-session-detail?uid=".$existingUser->uid);
+
+
+
+
+//$result = drupal_http_request('https://bombayliving.co.in/api/blapi/user/login', $options);
+
+
+                    
+                  //print json_encode($result->data);
+                  $returData["uid"]=$account->uid;
+          
+                    print  json_encode($returData);
+                      exit();
+                      
+                          // header('Location: ' . $base_url2);
+                          //  exit();
+
+                }
+      
+     
+
+
+   }
+
+}
+
+
+function facebook_callback_fun()
+{
+     global $user,$base_url;
+ // echo '<br> jimi jimi .. aaja aaja1...';
+   $dbase_prefix = $GLOBALS['databases']['default']['default']['prefix'];
+         $config2=[
+                  'app_id' => '379189712188236',
+                  'app_secret' => '6457b0d434e81cedbb7e487b7682e42f',
+                  'default_graph_version' => 'v2.10',
+                  'default_access_token' => 'EAAFY3vwY80wBAHiEmztqYiJD290tIr2hDt0mlCemRbTA0fHCZBvboEXNCHTNBmAN7ivwKFCr9rDiwgRwtnByuRu8Sv720P0sippz2ZAVHZBsFZBcU1kLQWLxqDmoN33eDgwE1qBZB8mZBeEP1aUyxScXxX3rzWXebtKCPCDs2LZCJhUPguQFSiBkEF9qkgMRG5w1feWOdVjjAZDZD', // optional
+               
+                ];
+                $fb = new \Facebook\Facebook($config2);
+                
+                $helper = $fb->getRedirectLoginHelper();
+                
+                if (isset($_GET['state'])) {
+    $helper->getPersistentDataHandler()->set('state', $_GET['state']);
+}
+             //  echo '<br> jimi jimi .. aaja aaja2...';   
+                try {
+                  $accessToken = $helper->getAccessToken();
+                } catch(Facebook\Exceptions\FacebookResponseException $e) {
+                  // When Graph returns an error
+                  $page_list_html.= 'Graph returned an error: ' . $e->getMessage();
+                  exit;
+                } catch(Facebook\Exceptions\FacebookSDKException $e) {
+                  // When validation fails or other local issues
+                  $page_list_html.= 'Facebook SDK returned an error: ' . $e->getMessage();
+                   return array(
+                            '#type' => 'markup',
+                            '#markup' => $page_list_html,
+                        );
+                  exit;
+                }
+                    //       echo '<br> jimi jimi .. aaja aaja3...';   
+                if (! isset($accessToken)) {
+                  if ($helper->getError()) {
+                    header('HTTP/1.0 401 Unauthorized');
+                    $page_list_html.= "Error: " . $helper->getError() . "\n";
+                    $page_list_html.= "Error Code: " . $helper->getErrorCode() . "\n";
+                    $page_list_html.= "Error Reason: " . $helper->getErrorReason() . "\n";
+                    $page_list_html.= "Error Description: " . $helper->getErrorDescription() . "\n";
+                  } else {
+                    header('HTTP/1.0 400 Bad Request');
+                    $page_list_html.= 'Bad request';
+                  }
+                   return array(
+                            '#type' => 'markup',
+                            '#markup' => $page_list_html,
+                        );
+                  exit;
+                }
+
+                  $oAuth2Client = $fb->getOAuth2Client();
+                
+                // Get the access token metadata from /debug_token
+                $tokenMetadata = $oAuth2Client->debugToken($accessToken);
+                $page_list_html= '<h3>Metadata</h3>';
+               // var_dump($tokenMetadata);
+                
+                // Validation (these will throw FacebookSDKException's when they fail)
+                $tokenMetadata->validateAppId('379189712188236'); // Replace {app-id} with your app id
+                // If you know the user ID this access token belongs to, you can validate it here
+                //$tokenMetadata->validateUserId('123');
+                $tokenMetadata->validateExpiration();
+                
+                if (! $accessToken->isLongLived()) 
+                {
+                  // Exchanges a short-lived access token for a long-lived one
+                  try {
+                    $accessToken = $oAuth2Client->getLongLivedAccessToken($accessToken);
+                  } catch (Facebook\Exceptions\FacebookSDKException $e) {
+                    $page_list_html.= "<p>Error getting long-lived access token: " . $e->getMessage() . "</p>\n\n";
+                     return array(
+                            '#type' => 'markup',
+                            '#markup' => $page_list_html,
+                        );
+                    exit;
+                  }
+                
+                 // $page_list_html.= '<h3>Long-lived</h3>';
+                 // var_dump($accessToken->getValue());
+                }
+             // echo '<br>action token is <pre>';
+             /// print_r($accessToken);
+              //  echo '</pre>';
+              //  exit();
+            //  echo '<br> jimi jimi .. aaja aaja1...';
+
+if (!session_id()) {
+    @session_start();
+         }
+                $_SESSION['fb_access_token'] = (string) $accessToken;
+               
+               // get user profile 
+            //  echo '<br> jimi jimi .. aaja aaja2...'; 
+                  // Getting user's profile info from Facebook
+          try {
+              $graphResponse = $fb->get('/me?fields=name,first_name,last_name,email,link,gender,picture',$accessToken);
+              $fbUser = $graphResponse->getGraphUser();
+          } catch(FacebookResponseException $e) {
+              echo 'Graph returned an error: ' . $e->getMessage();
+              session_destroy();
+              // Redirect user back to app login page
+              header("Location: ./");
+              exit;
+          } catch(FacebookSDKException $e) {
+              echo 'Facebook SDK returned an error: ' . $e->getMessage();
+              exit;
+          }
+              //echo '<br> jimi jimi .. aaja aaja3...'; 
+              
+//echo '<br>login user'.$fbUser["first_name"];
+//exit();
+        $tablePrefix=$dbase_prefix;
+           //check access token already exist or not
+                 $tablePrefix="";
+                 //where facebook_token=:facebook_token
+                $checkTokenAlreadyQuery="select * from ".$tablePrefix."users where facebook_token=:facebook_token";
+               $checkTokenResult= db_query($checkTokenAlreadyQuery,array('facebook_token' => $fbUser["id"]))->fetchAll();
+
+                if(count($checkTokenResult)>0)
+                {
+                 
+                    list($index,$userDataOb)=each($checkTokenResult);
+                    $userId=$userDataOb->uid;
+                   // $page_list_html.="<br> user id ".$userId;
+                    //  $user = \Drupal\user\Entity\User::load($userId);
+                     // user_login_finalize($user);
+                    //add redirect code here
+                    $user = user_load($userId);
+                     //  user_login_finalize($user);
+                           $form_state['uid'] = $user->uid;      
+                           user_login_submit(array(), $form_state);
+                           header('Location: ' . $base_url);
+                            exit();
+                    //return true;
+                    
+                    
+                }
+                else
+                {
+                    //check user already or not
+                    $userName=trim($fbUser["first_name"]);
+                    $userEmail=trim($fbUser["email"]);
+                    $userPass=$userName."123";
+
+                    //check already user or not
+                    $checkAlreadyUserOrnotQuery="select * from users where name=:name and mail=:mail";
+                    //$checkAlradyUserREsult=\Drupal::database()->query($checkAlreadyUserOrnotQuery,array("name" => $userName,"mail" => $userEmail))->fetchAll();
+                    $checkAlradyUserREsult=db_query($checkAlreadyUserOrnotQuery,array('name' => $userName,'mail' => $userEmail ))->fetchAll();
+
+                    if(count($checkAlradyUserREsult)>0)
+                    {
+                      echo '<br> user already exist1';
+                        list($userInIndex,$userDOB)=each($checkAlradyUserREsult);
+                        $fbUserId=$fbUser["id"];
+                        $updateUserInfo="update users set facebook_token=:facebook_token where uid=:uid ";
+                       // \Drupal::database()->query($updateUserInfo,array("facebook_token" => $fbUserId,"uid" => $userDOB->uid ));
+                       db_query($updateUserInfo,array('facebook_token' => $fbUserId,'uid' => $userDOB->uid ));
+
+                        $userId=$userDOB->uid;
+                        // $user = \Drupal\user\Entity\User::load($userDOB->uid);
+                         // user_login_finalize($user);
+//echo '<br> user already exist2 uid is '.$userId;
+//exit();
+                         // $user = user_load($userId);                  
+                           $form_state['uid'] = $userId;      
+                           user_login_submit(array(), $form_state);
+                        // user_login_finalize($userDOB);
+                           echo '<br> user already exist3';
+                             header('Location: ' . $base_url);
+                            exit();
+                            // return true;
+
+                    }
+                    else
+                    {
+                       
+
+
+
+                           //This will generate a random password, you could set your own here
+$password = user_password(8);
+
+ //,
+    //3 => 'custom role',
+$new_user = array(
+  'name' => $userName,
+  'pass' => $password, // note: do not md5 the password
+  'mail' => $userEmail,
+  'status' => 1,
+  'init' => $userEmail,
+  'roles' => array(
+    DRUPAL_AUTHENTICATED_RID => 'authenticated user'
+  ),
+);
+ 
+// The first parameter is sent blank so a new user is created.
+$account = user_save('', $new_user);
+//echo 'new user created!<pre>';
+//print_r($account);
+//echo '</pre>';
+//exit();
+
+
+//echo '<br> we are here!';
+   $hashthepass="newpass#1";
+    require_once DRUPAL_ROOT."/".variable_get("password_inc", "includes/password.inc");
+    $hashthepass = user_hash_password(trim($hashthepass));
+
+     if (!$hashthepass) {
+      return FALSE;
+    }
+    else {
+      db_update("users")
+        ->fields(array(
+          "pass" => $hashthepass
+        ))
+        ->condition("uid", $account->uid)       
+        ->execute();
+    }
+   // echo '<br> we are here2!';
+//exit();
+          //$user = user_load($account->uid);                  
+                           $form_state["uid"] = $account->uid;      
+                           user_login_submit(array(), $form_state);
+                           //  return true;
+                                  header('Location: ' . $base_url);
+                            exit();
+
+//echo '<br> we are here3!';
+                          
+                    }
+                }
+                
+
+
+  
+}
+
+
+
+function facebook_urlcallback_fun()
+{
+   $config2=[
+                      'app_id' => '379189712188236',
+                      'app_secret' => '6457b0d434e81cedbb7e487b7682e42f',
+                      'default_graph_version' => 'v2.10',
+                      'default_access_token' => 'EAAFY3vwY80wBAHiEmztqYiJD290tIr2hDt0mlCemRbTA0fHCZBvboEXNCHTNBmAN7ivwKFCr9rDiwgRwtnByuRu8Sv720P0sippz2ZAVHZBsFZBcU1kLQWLxqDmoN33eDgwE1qBZB8mZBeEP1aUyxScXxX3rzWXebtKCPCDs2LZCJhUPguQFSiBkEF9qkgMRG5w1feWOdVjjAZDZD', // optional
+                    
+                    ];
+            $fb = new \Facebook\Facebook($config2);
+            
+            $helper = $fb->getRedirectLoginHelper();
+            
+            $permissions = ["email"]; // Optional permissions
+            $loginUrl = $helper->getLoginUrl('https://bombayliving.co.in/api/facebook-callback', $permissions);
+            $fburlArray["fb_login_url"]=$loginUrl;
+             print json_encode($fburlArray);
+             exit;
+
+}
+
+
+
+function mycustome_form_alter(&$form, &$form_state, $form_id)
+{
+    global $user,$base_url;
+             $dbase_prefix = $GLOBALS['databases']['default']['default']['prefix'];
+  // echo '<br> user form id '.$form_id;
+    
+   // if($form_id=="user_register_form"||$form_id=="user_profile_form")
+   
+         if($form_id=="user_login")
+        {
+
+           $config2=[
+                      'app_id' => '379189712188236',
+                      'app_secret' => '6457b0d434e81cedbb7e487b7682e42f',
+                      'default_graph_version' => 'v2.10',
+                      'default_access_token' => 'EAAFY3vwY80wBAHiEmztqYiJD290tIr2hDt0mlCemRbTA0fHCZBvboEXNCHTNBmAN7ivwKFCr9rDiwgRwtnByuRu8Sv720P0sippz2ZAVHZBsFZBcU1kLQWLxqDmoN33eDgwE1qBZB8mZBeEP1aUyxScXxX3rzWXebtKCPCDs2LZCJhUPguQFSiBkEF9qkgMRG5w1feWOdVjjAZDZD', // optional
+                    
+                    ];
+            $fb = new \Facebook\Facebook($config2);
+            
+            $helper = $fb->getRedirectLoginHelper();
+            
+            $permissions = ["email"]; // Optional permissions
+            $loginUrl = $helper->getLoginUrl('https://bombayliving.co.in/api/facebook-callback', $permissions);
+            
+            $page_list_html= '<a href="' . htmlspecialchars($loginUrl) . '" class="newtestStyle" title="Facebook Login" >Facebook Login</a>';
+            
+             $tablePrefix=$dbase_prefix;
+                $queryCheck="SHOW COLUMNS FROM ".$tablePrefix."users LIKE :fieldName";
+                //$checkTableResult=\Drupal::database()->query($queryCheck,array('fieldName' => 'facebook_token'))->fetchAll();
+                $checkTableResult=db_query($queryCheck,array('fieldName' => 'facebook_token'))->fetchAll();
+                
+                if(count($checkTableResult)==0)
+                {
+                    $addColumnQuery="alter table ".$tablePrefix."users add column facebook_token mediumtext null";
+                    db_query($addColumnQuery);
+                  //  \Drupal::database()->query($addColumnQuery);
+                }
+
+
+            /*  $form["html_type"]=array(
+                                          '#type' => 'markup',
+                                            '#markup' => $page_list_html,
+                                            '#weight' => 30000,
+                                     );*/
+
+           
+        }
+     
+   
+}

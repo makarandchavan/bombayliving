@@ -1,0 +1,8 @@
+name = Commerce Option Feeds
+description = Provide Feeds integration for commerce option.
+package = Commerce
+core = 7.x
+version = 7.x-1.0
+
+dependencies[] = commerce_feeds
+dependencies[] = commerce_option

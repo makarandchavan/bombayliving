@@ -1,0 +1,8 @@
+name = Blapi custom
+description = Handles all custom API for bombay living site.
+package = Custom
+core = 7.x
+version = 7.1.0
+stylesheets[all][] = css/blapi_custom.css
+dependencies[] = services
+dependencies[] = rest_server

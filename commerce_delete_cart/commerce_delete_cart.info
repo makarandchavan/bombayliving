@@ -1,0 +1,6 @@
+name = Commerce Delete Cart
+description = Quickly delete your current order
+package = Commerce (contrib)
+dependencies[] = commerce
+configure = admin/commerce/config/delete-cart-config
+core = 7.x

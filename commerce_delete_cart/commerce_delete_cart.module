@@ -1,0 +1,32 @@
+<?php
+
+function commerce_delete_cart_menu() {
+  $items = array();
+  $items['blapi/cart/%/delete'] = array(
+    'title' => 'Delete Commerce Cart',
+    'page arguments' => array(1),
+    'page callback' => 'commerce_delete_cart_main',
+    'access callback' => TRUE,
+  );
+  return $items;
+}
+
+
+/*
+ * Where the magic happens
+ */
+function commerce_delete_cart_main($uid) {
+  // db_delete orders in cart or in checkout process
+  // TODO: combine to single delete
+  db_delete('commerce_order')
+    ->condition('uid', $uid)
+    ->condition('status', 'checkout_%', 'LIKE')
+    ->execute();
+  db_delete('commerce_order')
+    ->condition('uid', $uid)
+    ->condition('status', 'cart')
+    ->execute();
+
+  echo json_encode(array('success'));
+  exit;
+}

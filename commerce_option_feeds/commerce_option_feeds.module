@@ -1,0 +1,9 @@
+<?php
+/**
+ * Implements hook_feeds_processor_targets_alter().
+ */
+function commerce_option_feeds_feeds_processor_targets_alter(&$targets, $entity_type, $bundle_name) {
+  // commerce_option_set_reference.module.
+  module_load_include('inc', 'commerce_option_feeds', 'mappers/commerce_option_set_reference');
+  _commerce_option_set_reference_feeds_processor_targets_alter($targets, $entity_type, $bundle_name);
+}

@@ -1,0 +1,15 @@
+#views-exposed-form-commerce-backoffice-orders-admin-page ul.chosen-results li:first-child,
+#views-exposed-form-commerce-backoffice-orders-admin-page ul.chosen-results li:nth-child(1),
+#views-exposed-form-commerce-backoffice-orders-admin-page ul.chosen-results li:nth-child(2),
+#views-exposed-form-commerce-backoffice-orders-admin-page ul.chosen-results li:nth-child(3),
+#views-exposed-form-commerce-backoffice-orders-admin-page ul.chosen-results li:nth-child(4),
+#views-exposed-form-commerce-backoffice-orders-admin-page ul.chosen-results li:nth-child(5),
+#views-exposed-form-commerce-backoffice-orders-admin-page ul.chosen-results li:nth-child(6),
+#views-exposed-form-commerce-backoffice-orders-admin-page ul.chosen-results li:nth-child(7),
+#views-exposed-form-commerce-backoffice-orders-admin-page ul.chosen-results li:nth-child(9),
+#views-exposed-form-commerce-backoffice-orders-admin-page ul.chosen-results li:nth-child(11),
+#views-exposed-form-commerce-backoffice-orders-admin-page ul.chosen-results li:nth-child(12),
+#views-exposed-form-commerce-backoffice-orders-admin-page ul.chosen-results li:nth-child(14),
+#user-login .create-account {
+    display: none;
+}

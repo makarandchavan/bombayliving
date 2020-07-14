@@ -1,0 +1,8 @@
+name = Bombay living custom code
+description = Handles all custom code for bombay living site.
+package = Custom
+core = 7.x
+version = 7.1.0
+stylesheets[all][] = css/bombayliving.css
+dependencies[] = services
+dependencies[] = rest_server

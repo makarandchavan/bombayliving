@@ -1,0 +1,1865 @@
+<?php
+
+// Reference the Dompdf namespace
+use Dompdf\Dompdf;
+use Dompdf\Options;
+
+/**
+ * Implements hook_init().
+ */
+function bombayliving_init() {
+  $paths = explode("/", current_path());
+  if (count($paths) > 3 && $paths[0] == 'user' && $paths[2] == 'orders' && $paths[4] == 'print') {
+    drupal_page_is_cacheable(FALSE);
+  }
+}
+
+/**
+ * @file
+ * This module helps to handle custom code.
+ */
+
+/**
+ * Implements hook_commerce_currency_info_alter().
+ */
+function bombayliving_commerce_currency_info_alter(&$currencies) {
+  // Get the abbreviation of the default currency. This will return "USD" for
+  // US Dollars, "EUR" for Euros, etc.
+  // If your site is using multiple currencies, you can skip this and just use
+  // the abbreviation of the currency you want to change the format for.
+  $default_currency = commerce_default_currency();
+  $currencies[$default_currency]['format_callback'] = 'bombayliving_commerce_currency_format';  
+}
+
+/**
+ * Commerce currency format callback.
+ */
+function bombayliving_commerce_currency_format($amount, $currency, $currency_code, $object = NULL, $convert = TRUE) {
+  // Format the price as a number.  
+  $price = number_format(commerce_currency_round(abs($amount), $currency), 0, $currency['decimal_separator'], $currency['thousands_separator']);
+
+  // Establish the replacement values to format this price for its currency.
+  $replacements = array(
+    '@code_before' => $currency['code_placement'] == 'before' ? $currency['code'] : '',
+    '@symbol_before' => $currency['symbol_placement'] == 'before' ? $currency['symbol'] : '',
+    '@price' => $price,
+    '@symbol_after' => $currency['symbol_placement'] == 'after' ? $currency['symbol'] : '',
+    '@code_after' => $currency['code_placement'] == 'after' ? $currency['code'] : '',
+    '@negative' => $amount < 0 ? '-' : '',
+    '@symbol_spacer' => $currency['symbol_spacer'],
+    '@code_spacer' => $currency['code_spacer'],
+  );
+  return trim(t('@code_before@code_spacer@negative@symbol_before@price@symbol_spacer@symbol_after@code_spacer@code_after', $replacements));
+}
+
+function bombayliving_form_alter(&$form, &$form_state, $form_id) {
+  if($form_id == 'user_profile_form') {
+    $last_address = $form['field_add1']['und']['#max_delta'];
+    if($form['field_add1']['und'][$last_address]['#address']['country'] == "AF") {
+      unset($form['field_add1']['und'][$last_address]);
+      $form['field_add1']['und']['#max_delta'] = $last_address - 1;
+    }
+    foreach($form['field_add1']['und'][0]['#entity']->field_add1['und'] as $key => $add) {
+      if(empty($add['country'])) {
+        unset($form['field_add1']['und'][$key]);
+        $form['field_add1']['und']['#max_delta'] = $last_address - 1;
+      }
+    }
+  }
+}
+
+function _get_products_by_termid($termids, $ex_nid) {
+  $nids = taxonomy_select_nodes($termids);
+  $products = [];
+  if (!empty($nids)) {
+    foreach ($nids as $nid => $value) {
+      if($ex_nid != $value) {
+        $product = node_load($value);
+        $variant = commerce_product_load($product->field_product[LANGUAGE_NONE][0]['product_id']);
+        $products[] = array(
+          'product_id' => $product->nid,
+          'name' => $product->title,
+          'price' => ($variant->commerce_price[LANGUAGE_NONE][0]['amount']/100),
+          'img' => !empty($product->field_images[LANGUAGE_NONE][0]['uri']) ? file_create_url($product->field_images[LANGUAGE_NONE][0]['uri']) : '',
+        );
+      }
+    }
+  }
+  return $products;
+}
+
+
+function hextobin($hexString) 
+ { 
+	$length = strlen($hexString); 
+	$binString="";   
+	$count=0; 
+	while($count<$length) 
+	{       
+	    $subString =substr($hexString,$count,2);           
+	    $packedString = pack("H*",$subString); 
+	    if ($count==0)
+	    {
+			$binString=$packedString;
+	    } 
+	    
+	    else 
+	    {
+			$binString.=$packedString;
+	    } 
+	    
+	    $count+=2; 
+	} 
+        return $binString; 
+  } 
+
+/*
+* @param1 : Encrypted String
+* @param2 : Working key provided by CCAvenue
+* @return : Plain String
+*/
+function decrypt($encryptedText,$key)
+{
+	$key = hextobin(md5($key));
+	$initVector = pack("C*", 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f);
+	$encryptedText = hextobin($encryptedText);
+	$decryptedText = openssl_decrypt($encryptedText, 'AES-128-CBC', $key, OPENSSL_RAW_DATA, $initVector);
+	return $decryptedText;
+}
+function _ccavenue_response($data) {
+  if(!empty($data['mail']) && !empty($data['pass'])) {
+    $new_user = array(
+      'pass' => $data['pass'],
+      'name' => $data['mail'],
+      'mail' => $data['mail'],
+      'signature_format' => 'full_html',
+      'status' => 1,
+      'language' => 'en',
+      'timezone' => 'Asia/Kolkata',
+      'init' => 'Email',
+      'roles' => array(
+        '2' => 'authenticated user',
+      ),
+      'field_first_name' => array(
+        'und' => array(
+          0 => array(
+            'value' => !empty($data['first_name']) ? $data['first_name'] : '',
+          ),
+        ),
+      ),
+      'field_last_name' => array(
+        'und' => array(
+          0 => array(
+            'value' => !empty($data['last_name']) ? $data['last_name'] : '',
+          ),
+        ),
+      ),
+      'field_number' => array(
+        'und' => array(
+          0 => array(
+            'value' => !empty($data['number']) ? $data['number'] : '',
+          ),
+        ),
+      )
+    );
+
+    foreach($data['address'] as $k => $add) {
+      $add = explode("|", $add);
+      $new_user['field_add1']['und'][$k]['country'] = 'IN';
+      $new_user['field_add1']['und'][$k]['thoroughfare'] = $add[0];
+      $new_user['field_add1']['und'][$k]['premise'] = $add[1];
+      $new_user['field_add1']['und'][$k]['locality'] = $add[2];
+      $new_user['field_add1']['und'][$k]['administrative_area'] = $add[3];
+      $new_user['field_add1']['und'][$k]['postal_code'] = $add[4];
+    }
+    
+    $account = user_save(NULL, $new_user);
+    print json_encode($account);
+    exit;
+  }
+  else {
+    print json_encode(array('error' => 'Please fill required inputs.'));
+    exit;
+  }
+
+// 	$workingKey='003D6196E6F1BE3F3C90674E9871D374';		//Working Key should be provided here.
+// 	$encResponse=$_POST["encResp"];			//This is the response sent by the CCAvenue Server
+// 	$rcvdString=decrypt($encResponse,$workingKey);		//Crypto Decryption used as per the specified working key.
+// 	$order_status="";
+// 	$decryptValues=explode('&', $rcvdString);
+    
+//     return $decryptValues;
+}
+
+
+
+// Implements hook_menu.
+function bombayliving_menu() {
+  $items = array();
+
+  $items['blapi/homepage'] = array(
+    'title' => 'Homepage data',
+    'page callback' => '_homepage_json_output',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+  
+  $items['blapi/architects'] = array(
+    'title' => 'Architects',
+    'page callback' => '_get_architects',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+  
+  
+  $items['blapi/ccavenueresponse'] = array(
+    'title' => 'CC-Avenue',
+    'page callback' => '_ccavenue_response',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+  
+  
+  $items['blapi/contact'] = array(
+    'title' => 'Contact',
+    'page callback' => 'contact_category_edit_form_submit',
+    'access arguments' => array(
+      'access content',
+    ),    
+    'type' => MENU_CALLBACK,
+    'file' => 'contact.admin.inc',
+  );
+  
+  $items['blapi/ccavenue'] = array(
+    'title' => 'CC-Avenue',
+    'page callback' => '_payment_redirection',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['blapi/architect/%'] = array(
+    'title' => 'Architects',
+    'page callback' => '_get_architect_by_id',
+    'page arguments' => array(2),
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['blapi/gallery'] = array(
+    'title' => 'Gallery',
+    'page callback' => '_get_gallery',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['blapi/gallery/%/%'] = array(
+    'title' => 'Gallery',
+    'page callback' => '_get_gallery_by_id',
+    'page arguments' => array(2,3),
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+  
+  $items['blapi/category'] = array(
+    'title' => 'Category Landing',
+    'page callback' => '_category_landing',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+  
+  $items['blapi/collection'] = array(
+    'title' => 'Colletion Landing',
+    'page callback' => '_collection_landing',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+  
+  $items['blapi/products/%'] = array(
+    'title' => 'Products Filter',
+    'page callback' => '_get_products_by_type',
+    'page arguments' => array(2),
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+  
+  $items['blapi/prod/%'] = array(
+    'title' => 'Product Landing',
+    'page callback' => '_get_product_by_id',
+    'page arguments' => array(2),
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['blapi/swatches'] = array(
+    'title' => 'Swatch Listing',
+    'page callback' => '_get_swatches',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+  
+  $items['blapi/newsletter/%'] = array(
+    'title' => 'Subscribe to newsletter',
+    'page callback' => '_subscribe_newletter',
+    'page arguments' => array(2),
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['blapi/swatch/%'] = array(
+    'title' => 'Swatch Landing',
+    'page callback' => '_get_swatch_by_id',
+    'page arguments' => array(2),
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['blapi/about-us'] = array(
+    'title' => 'About us',
+    'page callback' => '_about_us',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['blapi/reg-new-user'] = array(
+    'title' => 'register user',
+    'page callback' => '_bombayliving_register_user',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['blapi/order-custom/%/%'] = array(
+    'title' => 'Order Update',
+    'page callback' => '_update_order',
+    'access arguments' => array(
+      'access content',
+    ),
+    'page arguments' => array(2,3),
+    'type' => MENU_CALLBACK,
+  );
+  
+  $items['blapi/search'] = array(
+    'title' => 'Search',
+    'page callback' => 'commerce_search',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+  
+  $items['blapi/user-update'] = array(
+    'title' => 'update user',
+    'page callback' => '_update_user',
+    'access arguments' => array(
+      'change own username',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['blapi/download-invoice/%/%'] = array(
+    'title' => 'Download Invoice',
+    'page callback' => '_download_invoice',
+    'page arguments' => array(2,3),
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+  
+  return $items;
+}
+
+function _download_invoice($uid = NULL, $oid = NULL) {
+  global $base_url;
+
+  $options = new Options();
+  $options->set('isRemoteEnabled', TRUE);
+  $options->set('isHtml5ParserEnabled', true);
+  // Instantiate and use the dompdf class 
+  $dompdf = new Dompdf($options);
+  $contxt = stream_context_create([ 
+    'ssl' => [ 
+        'verify_peer' => FALSE, 
+        'verify_peer_name' => FALSE,
+        'allow_self_signed'=> TRUE
+    ] 
+  ]);
+  $dompdf->setHttpContext($contxt);
+
+  // Load content from html file 
+  $html = file_get_contents($base_url . '/user/' . $uid . '/orders/' . $oid . '/print?str=' . mt_rand());
+  $dompdf->loadHtml($html);
+  
+  // (Optional) Setup the paper size and orientation 
+  $dompdf->setPaper('A4', 'portrait'); 
+  
+  // Render the HTML as PDF 
+  $dompdf->render(); 
+  
+  // Output the generated PDF (1 = download and 0 = preview) 
+  $dompdf->stream("Invoice-". $oid, array("Attachment" => 1));
+}
+
+function commerce_search_old(){
+    $filter = $_POST['filter'];
+    if(!empty($filter)) {
+      module_load_include('module', 'commerce_services');
+      $query = new EntityFieldQuery();
+      $query->entityCondition('entity_type', 'commerce_product')
+          ->fieldCondition('title_field', 'value', $filter, 'CONTAINS')
+          ->fieldOrderBy('commerce_price', 'amount', 'DESC');
+      $result = $query->execute();
+      $entities = entity_load('commerce_product', array_keys($result['commerce_product']));
+      $products = [];
+      foreach($entities as $entity){
+        if(!empty($entity->commerce_stock_override[LANGUAGE_NONE][0]['value'])) 
+        {
+          $query = new EntityFieldQuery;
+          //
+          $query->entityCondition('entity_type', 'node', '=')          
+          ->fieldCondition('field_product', 'product_id', $entity->product_id, '=')
+          ->propertyCondition('type', 'bags_cases')
+          ->range(0, 1);
+          $result = $query->execute();
+          if(!empty($result)) {
+            $nid = array_shift($result['node']);
+            $node = node_load($nid->nid);
+          }
+          if(empty($products[$node->nid])) {
+            $products[$node->nid] = array(
+              'name' => $node->title,
+              'starting_price' => ($entity->commerce_price[LANGUAGE_NONE][0]['amount']/100),
+              'thumbnail' => !empty($node->field_images[LANGUAGE_NONE][0]['uri']) ? file_create_url($node->field_images[LANGUAGE_NONE][0]['uri']) : '',
+              'product_id' => $node->nid,
+              'stock' => 10000,
+            );
+          }
+
+        }
+        else if($entity->field_material[LANGUAGE_NONE][0]['tid'] == 58 && $entity->field_fill[LANGUAGE_NONE][0]['tid'] == 57) {
+          //echo "<pre>";print_r($entity);exit;
+          $query = new EntityFieldQuery;
+          $query->entityCondition('entity_type', 'node', '=')
+          ->propertyCondition('type', 'bags_cases')
+          ->fieldCondition('field_product', 'product_id', $entity->product_id, '=')
+          ->range(0, 1);
+          $result = $query->execute();
+          if(!empty($result)) {
+            $nid = array_shift($result['node']);
+            $node = node_load($nid->nid);
+          }
+          if(empty($products[$node->nid])) {
+            $products[$node->nid] = array(
+              'name' => $node->title,
+              'starting_price' => ($entity->commerce_price[LANGUAGE_NONE][0]['amount']/100),
+              'thumbnail' => !empty($node->field_images[LANGUAGE_NONE][0]['uri']) ? file_create_url($node->field_images[LANGUAGE_NONE][0]['uri']) : '',
+              'product_id' => $node->nid,
+              'stock' => $entity->commerce_stock['und'][0]['value'],
+            );
+          }
+        }
+      }
+    }
+    else {
+      $products = array();
+    }
+    $products = array_reverse($products);
+    print json_encode($products);exit;
+}
+
+function commerce_search(){
+    $filter = $_POST['filter'];
+    if(!empty($filter)) {
+      module_load_include('module', 'commerce_services');
+      $query = new EntityFieldQuery();
+      $query->entityCondition('entity_type', 'commerce_product')
+          ->fieldCondition('title_field', 'value', $filter, 'CONTAINS')
+          ->fieldOrderBy('commerce_price', 'amount', 'DESC');
+      $result = $query->execute();
+      $entities = entity_load('commerce_product', array_keys($result['commerce_product']));
+      $products = [];
+      foreach($entities as $entity){
+
+       $query = new EntityFieldQuery;
+          //
+          $query->entityCondition('entity_type', 'node', '=')          
+          ->fieldCondition('field_product', 'product_id', $entity->product_id, '=')
+          ->propertyCondition('type', 'bags_cases')
+          ->range(0, 1);
+          $result = $query->execute();
+          if(!empty($result)) {
+            $nid = array_shift($result['node']);
+            $node = node_load($nid->nid);
+          }
+          if(empty($products[$node->nid])) {
+            $products[$node->nid] = array(
+              'name' => $node->title,
+              'starting_price' => ($entity->commerce_price[LANGUAGE_NONE][0]['amount']/100),
+              'thumbnail' => !empty($node->field_images[LANGUAGE_NONE][0]['uri']) ? file_create_url($node->field_images[LANGUAGE_NONE][0]['uri']) : '',
+              'product_id' => $node->nid,
+              'stock' => 10000,
+            );
+          }
+        
+      }
+    }
+    else {
+      $products = array();
+    }
+    $products = array_reverse($products);
+    print json_encode($products);exit;
+}
+
+function _update_order($uid = NULL, $order_id = NULL){
+  $status = 'error';
+  // Takes raw data from the request
+  $json = file_get_contents('php://input');
+  // Converts it into a PHP object
+  $_POST = (array) json_decode($json);
+
+  // If no token is sent, load anonymous.
+  if (!isset($_SERVER['HTTP_X_USER_SESSION_TOKEN'])) {
+    $user = drupal_anonymous_user();
+    $user->timestamp = time();
+    session_id(drupal_random_key());
+    print json_encode(array('error' => array('code' => 404, 'message' => 'Access denied for anonymous user.')));
+    exit;
+  }
+  // Else, if session is sent, load user.
+  elseif(isset($_SERVER['HTTP_X_USER_SESSION_TOKEN']) && !empty($_SERVER['HTTP_X_USER_SESSION_TOKEN'])) {
+    // Inspired by session.inc _drupal_session_read() function.
+    $sid = $_SERVER['HTTP_X_USER_SESSION_TOKEN'];
+
+    // Otherwise, if the session is still active, we have a record of the
+    // client's session in the database. If it's HTTPS then we are either have
+    // a HTTPS session or we are about to log in so we check the sessions table
+    // for an anonymous session with the non-HTTPS-only cookie.
+    global $is_https;
+    if ($is_https) {
+      $user = db_query("SELECT u.*, s.* FROM {users} u INNER JOIN {sessions} s ON u.uid = s.uid WHERE s.ssid = :ssid", array(':ssid' => $sid))->fetchObject();
+    }
+    else {
+      $user = db_query("SELECT u.*, s.* FROM {users} u INNER JOIN {sessions} s ON u.uid = s.uid WHERE s.sid = :sid", array(':sid' => $sid))->fetchObject();
+    }
+
+    // We found the client's session record and they are an authenticated,
+    // active user.
+    if ($user && $user->uid > 0 && $user->status == 1 && $uid == $user->uid) {
+      if(!empty($_POST) && !empty($uid) && !empty($order_id)) {
+        $order = commerce_order_load($order_id);
+        $timestamp = time();
+        // Update order.
+        $order->status = $_POST['status'];
+        $order->uid = (int) $uid;
+        $order->created = $timestamp;
+        $order->changed = $timestamp;
+        $order->field_points_used‎[LANGUAGE_NONE][0]['value'] = $_POST['points'];
+        $order->field_transaction_id[LANGUAGE_NONE][0]['value'] = $_POST['tid'];
+        $order->field_paid_amount[LANGUAGE_NONE][0]['value'] = $_POST['amount'];
+        $default_bill_pid = commerce_addressbook_get_default_profile_id($uid,'billing');
+        $default_ship_pid = commerce_addressbook_get_default_profile_id($uid,'shipping');
+        
+        if(!empty($_POST['billing'])) {
+          // Save billing and shipping address.
+          if(!empty($default_bill_pid)) {
+            $profile = commerce_customer_profile_load($default_bill_pid);
+          }
+          else {
+            $profile = new stdClass();
+            $profile->type = 'billing';
+          }
+          $profile->uid = $uid;
+          // Address field
+          $profile->commerce_customer_address['und'][0]['country'] = $_POST['billing']->country;
+          $profile->commerce_customer_address['und'][0]['administrative_area'] = $_POST['billing']->state;
+          $profile->commerce_customer_address['und'][0]['locality'] = $_POST['billing']->city;
+          $profile->commerce_customer_address['und'][0]['postal_code'] = $_POST['billing']->code;
+          $profile->commerce_customer_address['und'][0]['thoroughfare'] = $_POST['billing']->add_1;
+          $profile->commerce_customer_address['und'][0]['premise'] = $_POST['billing']->add_2;
+          $profile->commerce_customer_address['und'][0]['name_line'] = $_POST['first_name'] . ' ' . $_POST['last_name'];
+          $profile->commerce_customer_address['und'][0]['first_name'] = $_POST['first_name'];
+          $profile->commerce_customer_address['und'][0]['last_name'] = $_POST['last_name'];
+          $bprofile = $profile;
+          commerce_customer_profile_save($bprofile);
+        }
+        if(!empty($_POST['shipping'])) {
+          // Save billing and shipping address.
+          if(!empty($default_ship_pid)) {
+            $profile = commerce_customer_profile_load($default_ship_pid);
+          }
+          else {
+            $profile = new stdClass();
+            $profile->type = 'shipping';
+          }
+          // Address field
+          $profile->commerce_customer_address['und'][0]['country'] = $_POST['shipping']->country;
+          $profile->commerce_customer_address['und'][0]['administrative_area'] = $_POST['shipping']->state;
+          $profile->commerce_customer_address['und'][0]['locality'] = $_POST['shipping']->city;
+          $profile->commerce_customer_address['und'][0]['postal_code'] = $_POST['shipping']->code;
+          $profile->commerce_customer_address['und'][0]['thoroughfare'] = $_POST['shipping']->add_1;
+          $profile->commerce_customer_address['und'][0]['premise'] = $_POST['shipping']->add_2;
+          $profile->commerce_customer_address['und'][0]['name_line'] = $_POST['first_name'] . ' ' . $_POST['last_name'];
+          $profile->commerce_customer_address['und'][0]['first_name'] = $_POST['first_name'];
+          $profile->commerce_customer_address['und'][0]['last_name'] = $_POST['last_name'];
+          $sprofile = $profile;
+          commerce_customer_profile_save($sprofile);
+        }
+        elseif(!empty($bprofile)) {
+          $sprofile = $bprofile;
+          commerce_customer_profile_save($sprofile);
+        }
+    
+        if(!empty($bprofile)) {
+          $order->commerce_customer_billing['und'][0]['profile_id'] = $bprofile->profile_id;
+        }
+        if(!empty($sprofile)) {
+          $order->commerce_customer_shipping['und'][0]['profile_id'] = $sprofile->profile_id;
+        }
+        commerce_checkout_complete($order);
+        $order->status = $_POST['status'];
+        // Save the order again to update its details from payment gateway.
+        $status = commerce_order_save($order);
+      }
+      if($status == 2) {
+        $status = 'success';    
+      }
+      print json_encode(array($status));exit;
+    }
+  }
+}
+
+/**
+ * Administration forms form payment method.
+ */
+function _payment_redirection() {
+    var_dump($_POST);
+    die;
+//   $form = array();
+//   $settings = (array) $settings;
+
+//   $form['merchant_id'] = array(
+//     '#type' => 'textfield',
+//     '#title' => t('Merchant id'),
+//     '#default_value' => $settings['merchant_id'],
+//     '#required' => TRUE,
+//   );
+
+//   $form['working_key'] = array(
+//     '#type' => 'textfield',
+//     '#title' => t('CCavenue Working key'),
+//     '#default_value' => $settings['working_key'],
+//     '#required' => TRUE,
+//   );
+
+//   $form['access_code'] = array(
+//     '#type' => 'textfield',
+//     '#title' => t('CCavenue Access Code'),
+//     '#default_value' => $settings['access_code'],
+//     '#required' => TRUE,
+//   );
+
+//   $form['ccavenue_server'] = array(
+//     '#type' => 'select',
+//     '#title' => t('Payment Mode'),
+//     '#description' => t('The Available list of CCAvenue Servers'),
+//     '#options' => array(
+//       'https://secure.ccavenue.com/transaction/transaction.do?command=initiateTransaction' => ('Live'),
+//       'https://test.ccavenue.com/transaction/transaction.do?command=initiateTransaction' => ('Test'),
+//     ),
+//     '#default_value' => $settings['ccavenue_server'],
+//   );
+    var_dump($_POST);
+  return $_POST;
+}
+
+
+// Homepage json output function.
+function _homepage_json_output() {
+  // Get cached data.
+  if($cached = cache_get('homepage_blapi', 'cache'))  {
+    $output = $cached->data;
+  }
+  if(empty($output)) {
+    $output = array('homepage' => array());
+    
+    // Get top slider data.
+    $main_slider = node_load_multiple(array(), array('type' => 'slideshow', 'status' => 1));
+    $main_slider = array_shift($main_slider);
+    foreach($main_slider->field_slider_data[LANGUAGE_NONE] as $slider) {
+      $slide = field_collection_item_load($slider['value'], $reset = FALSE);
+      $output['homepage']['top_slides'][] = array(
+        'headline' => $slide->title_field[LANGUAGE_NONE][0]['value'],
+        'tagline' => $slide->field_list_description[LANGUAGE_NONE][0]['value'],
+        'image' => file_create_url($slide->field_single_image[LANGUAGE_NONE][0]['uri']),
+        'link' => array(
+          'title' => $slide->field_link[LANGUAGE_NONE][0]['title'],
+          'url' => $slide->field_link[LANGUAGE_NONE][0]['url'],
+        ),
+      ); 
+    }
+
+    // Get top tagline data.
+    $top_tagline = node_load_multiple(array(), array('type' => 'homepage_tagline_top', 'status' => 1));
+    $top_tagline = array_shift($top_tagline);
+    $output['homepage']['top_tagline'] = $top_tagline->title;
+
+    // Get grid data.
+    $grid_data = node_load_multiple(array(), array('type' => 'homepage_grid', 'status' => 1));
+    $grid_data = array_shift($grid_data);
+    foreach($grid_data->field_big_square_section_data[LANGUAGE_NONE] as $big_square) {
+      $slide = field_collection_item_load($big_square['value'], $reset = FALSE);
+      $output['homepage']['middle_grid']['big_square'][] = array(
+        'title' => $slide->title_field[LANGUAGE_NONE][0]['value'],
+        'image' => file_create_url($slide->field_single_image[LANGUAGE_NONE][0]['uri']),
+        'link' => array(
+          'title' => $slide->field_link[LANGUAGE_NONE][0]['title'],
+          'url' => $slide->field_link[LANGUAGE_NONE][0]['url'],
+        ),
+      ); 
+    }
+    foreach($grid_data->field_small_square_first_data[LANGUAGE_NONE] as $small_square_1) {
+      $slide = field_collection_item_load($small_square_1['value'], $reset = FALSE);
+      $output['homepage']['middle_grid']['small_square_1'][] = array(
+        'title' => $slide->title_field[LANGUAGE_NONE][0]['value'],
+        'image' => file_create_url($slide->field_single_image[LANGUAGE_NONE][0]['uri']),
+        'link' => array(
+          'title' => $slide->field_link[LANGUAGE_NONE][0]['title'],
+          'url' => $slide->field_link[LANGUAGE_NONE][0]['url'],
+        ),
+      ); 
+    }
+    foreach($grid_data->field_small_square_second_data[LANGUAGE_NONE] as $small_square_2) {
+      $slide = field_collection_item_load($small_square_2['value'], $reset = FALSE);
+      $output['homepage']['middle_grid']['small_square_2'][] = array(
+        'title' => $slide->title_field[LANGUAGE_NONE][0]['value'],
+        'image' => file_create_url($slide->field_single_image[LANGUAGE_NONE][0]['uri']),
+        'link' => array(
+          'title' => $slide->field_link[LANGUAGE_NONE][0]['title'],
+          'url' => $slide->field_link[LANGUAGE_NONE][0]['url'],
+        ),
+      ); 
+    }
+    foreach($grid_data->field_rectangle_data[LANGUAGE_NONE] as $rectangle) {
+      $slide = field_collection_item_load($rectangle['value'], $reset = FALSE);
+      $output['homepage']['middle_grid']['rectangle'][] = array(
+        'title' => $slide->title_field[LANGUAGE_NONE][0]['value'],
+        'image' => file_create_url($slide->field_single_image[LANGUAGE_NONE][0]['uri']),
+        'link' => array(
+          'title' => $slide->field_link[LANGUAGE_NONE][0]['title'],
+          'url' => $slide->field_link[LANGUAGE_NONE][0]['url'],
+        ),
+      ); 
+    }
+
+    // Get architects data.
+    $query = new EntityFieldQuery();
+    $query->entityCondition('entity_type', 'node');
+    $query->entityCondition('bundle', 'homepage_architects');
+    $query->fieldOrderBy('field_weight', 'value', 'ASC');
+    $query->propertyCondition('status', 1);
+    $architects = $query->execute();
+    foreach($architects['node'] as $architect) {
+      $data = node_load($architect->nid);
+      $output['homepage']['architects'][] = array(
+        'title' => $data->title_field[LANGUAGE_NONE][0]['value'],
+        'tagline' => $data->field_headline[LANGUAGE_NONE][0]['value'],
+        'image' => file_create_url($data->field_single_image[LANGUAGE_NONE][0]['uri']),
+        'id' => $architect->nid,
+      );
+    }
+
+    // Get testimonials data.
+    $testimonials = node_load_multiple(array(), array('type' => 'homepage_testimonials', 'status' => 1));
+    $testimonials = array_shift($testimonials);
+    foreach($testimonials->field_testimonials_data[LANGUAGE_NONE] as $testimonial) {
+      $slide = field_collection_item_load($testimonial['value'], $reset = FALSE);
+      $output['homepage']['testimonials'][] = array(
+        'title' => $slide->title_field[LANGUAGE_NONE][0]['value'],
+        'description' => $slide->field_newsletter_body[LANGUAGE_NONE][0]['value'],
+        'author' => $slide->field_list_description[LANGUAGE_NONE][0]['value']
+      );
+    }
+
+    // Get Video data.
+    $videos = node_load_multiple(array(), array('type' => 'homepage_video', 'status' => 1));
+    $videos = array_shift($videos);
+    if(!empty($videos->field_videos_data)) {
+      foreach($videos->field_videos_data[LANGUAGE_NONE] as $video) {
+        $slide = field_collection_item_load($video['value'], $reset = FALSE);
+        $output['homepage']['videos'][] = array(
+          'file' => file_create_url($slide->field_video_file[LANGUAGE_NONE][0]['uri'])
+        );
+      }
+    }
+
+    // Get second last slider data.
+    $last_slider = node_load_multiple(array(), array('type' => 'homepage_last_slider', 'status' => 1));
+    $last_slider = array_shift($last_slider);
+    if(!empty($last_slider->field_image)) {
+      foreach($last_slider->field_image[LANGUAGE_NONE] as $slide) {
+        $output['homepage']['last_slider'][] = array(
+          'file' => file_create_url($slide['uri']),
+        );
+      }
+    }
+
+    // Get offers data.
+    $offers = node_load_multiple(array(), array('type' => 'ad_push', 'status' => 1));
+    $offers = array_shift($offers);
+    if(!empty($offers->field_image)) {
+      foreach($offers->field_image[LANGUAGE_NONE] as $slide) {
+        $output['homepage']['offers'][] = array(
+          'file' => file_create_url($slide['uri']),
+        );
+      }
+    }
+    cache_set('homepage_blapi', $output, 'cache', strtotime('+1 month')); //1 day.
+  }
+  
+  // Output homepage data json.
+  print json_encode($output); exit;
+}
+
+function _category_landing() {
+  // Get cached data.
+  if($cached = cache_get('category_landing_blapi', 'cache'))  {
+    $products = $cached->data;
+  }
+  if(empty($products)) {
+    $categorys = taxonomy_get_tree(2);
+    $products = [];
+    if (!empty($categorys)) {
+      foreach ($categorys as $tid => $value) {
+        $product = taxonomy_term_load($value->tid);
+        if(!empty($product->field_published[LANGUAGE_NONE][0]['value'])) {
+          $products[] = array(
+            'id' => $product->tid,
+            'name' => $product->name,
+            'img' => !empty($product->field_image[LANGUAGE_NONE][0]['uri']) ? file_create_url($product->field_image[LANGUAGE_NONE][0]['uri']) : '',
+            'column' => !empty($product->field_column[LANGUAGE_NONE][0]['value']) ? $product->field_column[LANGUAGE_NONE][0]['value'] : ''
+          );
+        }
+      }
+      cache_set('category_landing_blapi', $products, 'cache', strtotime('+1 month')); //1 day.
+    }
+  }
+  // Output category json.
+  print json_encode($products);exit;
+}
+
+function _collection_landing() {
+  // Get cached data.
+  if($cached = cache_get('collection_landing_blapi', 'cache'))  {
+    $products = $cached->data;
+  }
+  if(empty($products)) {
+    $collections = taxonomy_get_tree(6);
+    $products = [];
+    if (!empty($collections)) {
+      foreach ($collections as $tid => $value) {
+        $product = taxonomy_term_load($value->tid);
+        if(!empty($product->field_published[LANGUAGE_NONE][0]['value'])) {
+          $products[] = array(
+            'id' => $product->tid,
+            'name' => $product->name,
+            'img' => !empty($product->field_image[LANGUAGE_NONE][0]['uri']) ? file_create_url($product->field_image[LANGUAGE_NONE][0]['uri']) : '',
+          );
+        }
+      }
+      cache_set('collection_landing_blapi', $products, 'cache', strtotime('+1 month')); //1 day.
+    }
+  }
+  // Output collection json.
+  print json_encode($products);exit;
+}
+
+function _get_products_by_type($tid) {
+  $parent = taxonomy_term_load($tid);
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node')
+    ->entityCondition('bundle', 'bags_cases');
+  if($parent->vocabulary_machine_name == 'collection') {
+    $query->fieldCondition('field_collection', 'tid', $tid);
+  }
+  if($parent->vocabulary_machine_name == 'tags') {
+    $query->fieldCondition('field_tag', 'tid', $tid);
+  }
+  $query->propertyCondition('status', 1)
+    ->propertyOrderBy('nid', 'ASC');
+  $results = $query->execute();
+  $nids = array_keys($results['node']);
+  //$nids = taxonomy_select_nodes($tid);
+  $products = $price = [];
+  $params = drupal_get_query_parameters();
+  if (!empty($nids)) {
+    foreach ($nids as $nid => $value) {
+      $product = node_load($value);
+      if(!empty($product)) {
+        $product_id = $product->field_product['und'][0]['product_id'];
+        $variant = commerce_product_load($product->field_product[LANGUAGE_NONE][0]['product_id']);
+        $stock = (!empty($variant->commerce_stock_override[LANGUAGE_NONE][0]['value'])) ? 10000 : $variant->commerce_stock['und'][0]['value'];
+        if(empty($params['range'])) {
+          $amount = ($variant->commerce_price[LANGUAGE_NONE][0]['amount']/100);
+          $products[] = array(
+            'name' => $product->title,
+            'starting_price' => $amount,
+            'thumbnail' => !empty($product->field_images[LANGUAGE_NONE][0]['uri']) ? file_create_url($product->field_images[LANGUAGE_NONE][0]['uri']) : '',
+            'product_id' => $product->nid,
+            'stock' => $stock,
+          );
+          $price[] = $amount;
+        }
+        else {
+            $range = explode("-", $params['range']);
+            $amount = ($variant->commerce_price[LANGUAGE_NONE][0]['amount']/100);
+            if($amount >= $range[0] && $amount <= $range[1]) {
+              $products[] = array(
+                'name' => $product->title,
+                'starting_price' => $amount,
+                'thumbnail' => !empty($product->field_images[LANGUAGE_NONE][0]['uri']) ? file_create_url($product->field_images[LANGUAGE_NONE][0]['uri']) : '',
+                'product_id' => $product->nid,
+                'stock' => $stock,
+              );
+              $price[] = $amount;
+            }
+        }
+      }
+    }
+  }
+  //Sort according to price.
+  if(!empty($params['price'])) {
+    if($params['price'] == 'asc') {
+      array_multisort($price, SORT_ASC, $products);
+    }
+    else if($params['price'] == 'desc') {
+      array_multisort($price, SORT_DESC, $products);
+    }
+  }
+  // Output product json.
+  print json_encode($products);exit;
+}
+
+function _get_product_by_id($nid) {
+  $product = node_load($nid);
+  $products = $variants = $relatedProducts = [];
+  // Get basic information about our fields.
+  $info_texts = node_load_multiple(array(), array('type' => 'information_text_s', 'status' => 1));
+  $info_texts = array_shift($info_texts);
+
+  if (!empty($product)) {
+    foreach($product->field_product[LANGUAGE_NONE] as $variant) {
+      $vts[] = $variant['product_id'];
+    }
+    $variants = commerce_product_load_multiple($vts);
+    foreach($variants as $variant) {
+      $skus[] = $variant->sku;
+    }
+    if(empty($product->field_vstatus[LANGUAGE_NONE][0]['value'])) {
+      // Check all variants and create missing.
+      foreach($variants as $variant) {
+        $prod_match = trim(substr($variant->sku, 0, 10));
+        if(!empty($prod_match)) {
+          $stock_prod = commerce_product_load_by_sku($prod_match);
+        }
+        // Check if other variants created, else create other variants based on amounts entered.
+        if(!empty($variant->field_velvet[LANGUAGE_NONE][0]['value']) && is_numeric($variant->field_velvet[LANGUAGE_NONE][0]['value']) && in_array($variant->sku . ' V', $skus) === FALSE) {
+          $existing_product = commerce_product_load_by_sku($variant->sku . ' V');
+          if(empty($existing_product->product_id)) {
+            $saved_product = bombayliving_create_product_variants($variant, $variant->sku . ' V', 56, 'V');
+          }
+          else {
+            $saved_product = bombayliving_update_product_variants($variant, $existing_product, 56, $variant->field_velvet[LANGUAGE_NONE][0]['value'], $stock_prod->commerce_stock[LANGUAGE_NONE][0]['value'], 'V', $stock_prod);
+          }
+          $product->field_product[LANGUAGE_NONE][]['product_id'] = $saved_product->product_id;
+        }
+        if(!empty($variant->field_texture[LANGUAGE_NONE][0]['value']) && is_numeric($variant->field_texture[LANGUAGE_NONE][0]['value']) && in_array($variant->sku . ' T', $skus) === FALSE) {
+          $existing_product = commerce_product_load_by_sku($variant->sku . ' T');
+          if(empty($existing_product->product_id)) {
+            $saved_product = bombayliving_create_product_variants($variant, $variant->sku . ' T', 61, 'T');
+          }
+          else {
+            $saved_product = bombayliving_update_product_variants($variant, $existing_product, 61, $variant->field_texture[LANGUAGE_NONE][0]['value'], $stock_prod->commerce_stock[LANGUAGE_NONE][0]['value'], 'T', $stock_prod);
+          }
+          $product->field_product[LANGUAGE_NONE][]['product_id'] = $saved_product->product_id;
+        }
+        if(!empty($variant->field_leather_mastro[LANGUAGE_NONE][0]['value']) && is_numeric($variant->field_leather_mastro[LANGUAGE_NONE][0]['value']) && in_array($variant->sku . ' LM', $skus) === FALSE) {
+          $existing_product = commerce_product_load_by_sku($variant->sku . ' LM');
+          if(empty($existing_product->product_id)) {
+            $saved_product = bombayliving_create_product_variants($variant, $variant->sku . ' LM', 100, 'LM');
+          }
+          else {
+            $saved_product = bombayliving_update_product_variants($variant, $existing_product, 100, $variant->field_leather_mastro[LANGUAGE_NONE][0]['value'], $stock_prod->commerce_stock[LANGUAGE_NONE][0]['value'], 'LM', $stock_prod);
+          }
+          $product->field_product[LANGUAGE_NONE][]['product_id'] = $saved_product->product_id;
+        }
+        if(!empty($variant->field_leather_vagabond[LANGUAGE_NONE][0]['value']) && is_numeric($variant->field_leather_vagabond[LANGUAGE_NONE][0]['value']) && in_array($variant->sku . ' LV', $skus) === FALSE) {
+          $existing_product = commerce_product_load_by_sku($variant->sku . ' LV');
+          if(empty($existing_product->product_id)) {
+            $saved_product = bombayliving_create_product_variants($variant, $variant->sku . ' LV', 101, 'LV');
+          }
+          else {
+            $saved_product = bombayliving_update_product_variants($variant, $existing_product, 101, $variant->field_leather_mastro[LANGUAGE_NONE][0]['value'], $stock_prod->commerce_stock[LANGUAGE_NONE][0]['value'], 'LV', $stock_prod);
+          }
+          $product->field_product[LANGUAGE_NONE][]['product_id'] = $saved_product->product_id;
+        }
+        if(!empty($variant->field_leather_tango[LANGUAGE_NONE][0]['value']) && is_numeric($variant->field_leather_tango[LANGUAGE_NONE][0]['value']) && in_array($variant->sku . ' LT', $skus) === FALSE) {
+          $existing_product = commerce_product_load_by_sku($variant->sku . ' LT');
+          if(empty($existing_product->product_id)) {
+            $saved_product = bombayliving_create_product_variants($variant, $variant->sku . ' LT', 102, 'LT');
+          }
+          else {
+            $saved_product = bombayliving_update_product_variants($variant, $existing_product, 101, $variant->field_leather_mastro[LANGUAGE_NONE][0]['value'], $stock_prod->commerce_stock[LANGUAGE_NONE][0]['value'], 'LT', $stock_prod);
+          }
+          $product->field_product[LANGUAGE_NONE][]['product_id'] = $saved_product->product_id;
+        }
+      }
+      $product->field_vstatus[LANGUAGE_NONE][0]['value'] = 'done';
+      // Save product display.
+      node_save($product);
+    }
+    else {
+      $prods = $existing_prod = array();
+      foreach($variants as $variant) {
+        $find_match = substr($variant->sku, -2);
+        if($find_match == ' F') {
+          $existing_prod[] = $variant->product_id;
+        }
+        else if($find_match == ' L') {
+          $existing_prod[] = $variant->product_id;
+        }
+        else {
+          $sku_r = str_replace(" ", "", $variant->sku);
+          $prods[$sku_r] = $variant;
+        }
+        $skus[] = $variant->sku; 
+      }
+      // Update product variants.
+      foreach($variants as $variant) {
+        $prod_match = trim(substr($variant->sku, 0, 10));
+        if(!empty($prod_match)) {
+          $stock_prod = commerce_product_load_by_sku($prod_match);
+        }
+        if(!in_array($variant->product_id, $existing_prod)) {
+          $sku_r = str_replace(" ", "", $variant->sku);
+          // Check if other variants created, else create other variants based on amounts entered.
+          if(!empty($variant->field_velvet[LANGUAGE_NONE][0]['value']) && is_numeric($variant->field_velvet[LANGUAGE_NONE][0]['value']) && (substr($variant->sku, -2) == ' V') && in_array($variant->sku, $skus)) {
+            bombayliving_update_product_variants($variant, $prods[$sku_r], 56, $variant->field_velvet[LANGUAGE_NONE][0]['value'], $stock_prod->commerce_stock[LANGUAGE_NONE][0]['value'], 'V', $stock_prod);
+          }
+          if(!empty($variant->field_texture[LANGUAGE_NONE][0]['value']) && is_numeric($variant->field_texture[LANGUAGE_NONE][0]['value']) && (substr($variant->sku, -2) == ' T') && in_array($variant->sku, $skus)) {
+            bombayliving_update_product_variants($variant, $prods[$sku_r], 61, $variant->field_texture[LANGUAGE_NONE][0]['value'], $stock_prod->commerce_stock[LANGUAGE_NONE][0]['value'], 'T', $stock_prod);
+          }
+          if(!empty($variant->field_leather_mastro[LANGUAGE_NONE][0]['value']) && is_numeric($variant->field_leather_mastro[LANGUAGE_NONE][0]['value']) && (substr($variant->sku, -2) == 'LM') && in_array($variant->sku, $skus)) {
+            bombayliving_update_product_variants($variant, $prods[$sku_r], 100, $variant->field_leather_mastro[LANGUAGE_NONE][0]['value'], $stock_prod->commerce_stock[LANGUAGE_NONE][0]['value'], 'LM', $stock_prod);
+          }
+          if(!empty($variant->field_leather_vagabond[LANGUAGE_NONE][0]['value']) && is_numeric($variant->field_leather_vagabond[LANGUAGE_NONE][0]['value']) && (substr($variant->sku, -2) == 'LV') && in_array($variant->sku, $skus)) {
+            bombayliving_update_product_variants($variant, $prods[$sku_r], 101, $variant->field_leather_vagabond[LANGUAGE_NONE][0]['value'], $stock_prod->commerce_stock[LANGUAGE_NONE][0]['value'], 'LV', $stock_prod);
+          }
+          if(!empty($variant->field_leather_tango[LANGUAGE_NONE][0]['value']) && is_numeric($variant->field_leather_tango[LANGUAGE_NONE][0]['value']) && (substr($variant->sku, -2) == 'LT') && in_array($variant->sku, $skus)) {
+            bombayliving_update_product_variants($variant, $prods[$sku_r], 102, $variant->field_leather_tango[LANGUAGE_NONE][0]['value'], $stock_prod->commerce_stock[LANGUAGE_NONE][0]['value'], 'LT', $stock_prod);
+          }
+        }
+      }
+    }
+
+    // Get fresh product.
+    $product = node_load($nid);
+    if (!empty($product)) {
+      foreach($product->field_product[LANGUAGE_NONE] as $variant) {
+        $vts[] = $variant['product_id'];
+      }
+      // Again load fresh products.
+      $variants = commerce_product_load_multiple($vts);
+      $products[$nid] = array(
+        'productid' => $nid,
+      );
+      if(!empty($product->field_related_products_tagging[LANGUAGE_NONE])) {
+        foreach($product->field_related_products_tagging[LANGUAGE_NONE] as $tag) {
+          $tags[] = $tag['tid'];
+        }
+        if(!empty($tags)) {
+          $relatedProducts = _get_products_by_termid($tags, $nid);
+        }
+      }
+      // Load product images.
+      $images = array();
+      if(!empty($product->field_images[LANGUAGE_NONE])) {
+        foreach($product->field_images[LANGUAGE_NONE] as $image) {
+          $images[] = file_create_url($image['uri']);
+        }
+      }
+
+      ksort($variants);
+      
+      foreach($variants as $variant) {
+        $size = !empty($variant->field_size[LANGUAGE_NONE][0]['tid']) ? taxonomy_term_load($variant->field_size[LANGUAGE_NONE][0]['tid']) : '';
+        $fill = !empty($variant->field_fill[LANGUAGE_NONE][0]['tid']) ? taxonomy_term_load($variant->field_fill[LANGUAGE_NONE][0]['tid']) : '';
+        $material = !empty($variant->field_material[LANGUAGE_NONE][0]['tid']) ? taxonomy_term_load($variant->field_material[LANGUAGE_NONE][0]['tid']) : '';
+        $swatches = array();
+        if($material->name == 'Cotton Blend') {
+          $swatches = _swatches(9);
+        }
+        if($material->name == 'Velvet') {
+          $swatches = _swatches(17);
+        }
+        if($material->name == 'Art Leather, Printed & Texture') {
+          $swatches = _swatches(18);
+        }
+        if($material->name == 'Leather- Mastro') {
+          $swatches = _swatches(19);
+        }
+        if($material->name == 'Leather- Vagabond') {
+          $swatches = _swatches(20);
+        }
+        if($material->name == 'Leather- Tango') {
+          $swatches = _swatches(21);
+        }
+
+        $products[$nid]['variants'][] = array(
+          'variantid' => $variant->product_id,
+          'title' => $product->title,
+          'price' => ($variant->commerce_price[LANGUAGE_NONE][0]['amount']/100),
+          'variant' => array(
+            'size' => !empty($size->name) ? $size->name : '',
+            'fill' => !empty($fill->name) ? $fill->name : '',
+            'Fabric' => array(
+              'type' => !empty($material->name) ? $material->name : '',
+              'color' => '',
+              'swatch' => $swatches,
+            ),
+            'infos' => array(
+              'sizeinfo' => strip_tags($info_texts->body[LANGUAGE_NONE][0]['value']),
+              'fillinfo' => strip_tags($info_texts->field_newsletter_body[LANGUAGE_NONE][0]['value']),
+              'fabricinfo' => strip_tags($info_texts->field_specifications[LANGUAGE_NONE][0]['value']),
+            ),
+            'description' => strip_tags($variant->field_newsletter_body[LANGUAGE_NONE][0]['value']),
+            'specification' => strip_tags($variant->field_specifications[LANGUAGE_NONE][0]['value']),
+            'dimension' => strip_tags($variant->field_dimensions[LANGUAGE_NONE][0]['value']),
+            'relatedproducts' => $relatedProducts,
+            'max_quantity' => number_format($variant->field_category_color[LANGUAGE_NONE][0]['value'], 0, '', ''),
+            'stock' => (!empty($variant->commerce_stock_override[LANGUAGE_NONE][0]['value'])) ? 10000 : number_format($variant->commerce_stock[LANGUAGE_NONE][0]['value'], 0, '', ''),
+            'images' => !empty($images) ? $images : '',
+          ),
+        );
+      }
+    }
+  }
+  // Output product json.
+  print json_encode($products);exit;
+}
+
+function _get_swatches() {
+  // Get cached data.
+  if($cached = cache_get('swatches_blapi', 'cache'))  {
+    $products = $cached->data;
+  }
+  if(empty($products)) {
+    $query = new EntityFieldQuery();
+    $query->entityCondition('entity_type', 'node')
+      ->entityCondition('bundle', 'drinks');
+    $query->propertyCondition('status', 1)
+      ->propertyOrderBy('nid', 'ASC');
+    $results = $query->execute();
+    $nids = array_keys($results['node']);
+    $products = [];
+    if (!empty($nids)) {
+      foreach ($nids as $nid => $value) {
+        $product = node_load($value);
+        if(!empty($product)) {
+          $variant = commerce_product_load($product->field_product[LANGUAGE_NONE][0]['product_id']);
+          $products[] = array(
+            'name' => $product->title,
+            'starting_price' => ($variant->commerce_price[LANGUAGE_NONE][0]['amount']/100),
+            'thumbnail' => !empty($product->field_images[LANGUAGE_NONE][0]['uri']) ? file_create_url($product->field_images[LANGUAGE_NONE][0]['uri']) : '',
+            'description' => !empty($product->body[LANGUAGE_NONE][0]['value']) ? trim($product->body[LANGUAGE_NONE][0]['value']) : '',
+            'product_id' => $product->nid,
+            'variant_id' => $product->field_product[LANGUAGE_NONE][0]['product_id'],
+          );
+        }
+      }
+      cache_set('swatches_blapi', $products, 'cache', strtotime('+1 month')); //1 day.
+    }
+  }
+  // Output product json.
+  print json_encode($products);exit;
+}
+
+function _get_swatch_by_id($nid) {
+  // Get cached data.
+  if($cached = cache_get('swatch_' . $nid . '_blapi', 'cache'))  {
+    $products = $cached->data;
+  }
+  if(empty($products)) {
+    $product = node_load($nid);
+    $products = $variants = $relatedProducts = [];
+    // Get basic information about our fields.
+    $info_texts = node_load_multiple(array(), array('type' => 'information_text_s', 'status' => 1));
+    $info_texts = array_shift($info_texts);
+
+    if (!empty($product)) {
+      // Get fresh product.
+      $product = node_load($nid);
+      if (!empty($product)) {
+        foreach($product->field_product[LANGUAGE_NONE] as $variant) {
+          $vts[] = $variant['product_id'];
+        }
+        // Again load fresh products.
+        $variants = commerce_product_load_multiple($vts);
+        $products[$nid] = array(
+          'productid' => $nid,
+        );
+        if(!empty($product->field_related_products_tagging‎[LANGUAGE_NONE])) {
+          foreach ($product->field_related_products_tagging‎[LANGUAGE_NONE] as $tag) {
+            $tags[] = $tag['tid'];
+          }
+          if(!empty($tags)) {
+            $relatedProducts = _get_products_by_termid($tags, $nid);
+          }
+        }
+        // Load product images.
+        $images = array();
+        if(!empty($product->field_images[LANGUAGE_NONE])) {
+          foreach($product->field_images[LANGUAGE_NONE] as $image) {
+            $images[] = file_create_url($image['uri']);
+          }
+        }
+        
+        foreach($variants as $variant) {
+          $products[$nid]['variants'][] = array(
+            'variantid' => $variant->product_id,
+            'title' => $product->title,
+            'price' => ($variant->commerce_price[LANGUAGE_NONE][0]['amount']/100),
+            'variant' => array(
+              'size' => !empty($size->name) ? $size->name : '',
+              'fill' => !empty($fill->name) ? $fill->name : '',
+              'Fabric' => array(
+                'type' => !empty($material->name) ? $material->name : '',
+                'color' => '',
+                'swatch' => $swatches,
+              ),
+              'infos' => array(
+                'sizeinfo' => strip_tags($info_texts->body[LANGUAGE_NONE][0]['value']),
+                'fillinfo' => strip_tags($info_texts->field_newsletter_body[LANGUAGE_NONE][0]['value']),
+                'fabricinfo' => strip_tags($info_texts->field_specifications[LANGUAGE_NONE][0]['value']),
+              ),
+              'description' => strip_tags($variant->field_newsletter_body[LANGUAGE_NONE][0]['value']),
+              'specification' => strip_tags($variant->field_specifications[LANGUAGE_NONE][0]['value']),
+              'dimension' => strip_tags($variant->field_dimensions[LANGUAGE_NONE][0]['value']),
+              'relatedproducts' => $relatedProducts,
+              'max_quantity' => number_format($variant->field_category_color[LANGUAGE_NONE][0]['value'], 0, '', ''),
+              'images' => !empty($images) ? $images : '',
+            ),
+          );
+        }
+        cache_set('swatch_' . $nid . '_blapi', $products, 'cache', strtotime('+1 month')); //1 day.
+      }
+    }
+  }
+  // Output product json.
+  print json_encode($products);exit;
+}
+
+function bombayliving_create_product_variants($variant = NULL, $sku = NULL, $material = NULL, $identifier = NULL) {
+  $vproduct = commerce_product_new('product');
+  $vproduct->sku = $sku;
+  $vproduct->title = $variant->title;
+  $vproduct->title_field[LANGUAGE_NONE][0]['value'] = $variant->title;
+  $vproduct->language = LANGUAGE_NONE;
+  $vproduct->type = 'bags_cases'; 
+  $vproduct->field_fill[LANGUAGE_NONE][0]['tid'] = $variant->field_fill[LANGUAGE_NONE][0]['tid'];
+  $vproduct->field_size[LANGUAGE_NONE][0]['tid'] = $variant->field_size[LANGUAGE_NONE][0]['tid'];
+  $vproduct->field_fabric[LANGUAGE_NONE][0]['value'] = $variant->field_fabric[LANGUAGE_NONE][0]['value'];
+  $vproduct->field_velvet[LANGUAGE_NONE][0]['value'] = $variant->field_velvet[LANGUAGE_NONE][0]['value'];
+  $vproduct->field_texture[LANGUAGE_NONE][0]['value'] = $variant->field_texture[LANGUAGE_NONE][0]['value'];
+  $vproduct->field_leather_mastro[LANGUAGE_NONE][0]['value'] = $variant->field_leather_mastro[LANGUAGE_NONE][0]['value'];
+  $vproduct->field_leather_vagabond[LANGUAGE_NONE][0]['value'] = $variant->field_leather_vagabond[LANGUAGE_NONE][0]['value'];
+  $vproduct->field_leather_tango[LANGUAGE_NONE][0]['value'] = $variant->field_leather_tango[LANGUAGE_NONE][0]['value'];
+  $vproduct->field_category_color[LANGUAGE_NONE][0]['value'] = $variant->field_category_color[LANGUAGE_NONE][0]['value'];
+  $vproduct->commerce_stock[LANGUAGE_NONE][0]['value'] = $variant->commerce_stock[LANGUAGE_NONE][0]['value'];
+  $vproduct->field_newsletter_body[LANGUAGE_NONE][0]['value'] = $variant->field_newsletter_body[LANGUAGE_NONE][0]['value'];
+  $vproduct->field_specifications[LANGUAGE_NONE][0]['value'] = $variant->field_specifications[LANGUAGE_NONE][0]['value'];
+  $vproduct->field_dimensions[LANGUAGE_NONE][0]['value'] = $variant->field_dimensions[LANGUAGE_NONE][0]['value'];
+  $vproduct->field_packing[LANGUAGE_NONE][0]['amount'] = $variant->field_packing[LANGUAGE_NONE][0]['amount'];
+  $vproduct->field_packing[LANGUAGE_NONE][0]['currency_code'] = $variant->field_packing[LANGUAGE_NONE][0]['currency_code'];
+  $vproduct->field_shipping_insurance[LANGUAGE_NONE][0]['amount'] = $variant->field_shipping_insurance[LANGUAGE_NONE][0]['amount'];
+  $vproduct->field_shipping_insurance[LANGUAGE_NONE][0]['currency_code'] = $variant->field_shipping_insurance[LANGUAGE_NONE][0]['currency_code'];
+  $vproduct->uid = 5;
+  $vproduct->commerce_price[LANGUAGE_NONE][0] = array(
+    'amount' => $variant->commerce_price[LANGUAGE_NONE][0]['amount'], // $10
+    'currency_code' => $variant->commerce_price[LANGUAGE_NONE][0]['currency_code'],
+  );
+  $vproduct->field_material[LANGUAGE_NONE][0]['tid'] = $material;
+  $vproduct->status = $variant->status;
+
+  // Set GST info.
+  if($identifier == 'V') {
+    $vproduct->field_cgst[LANGUAGE_NONE][0]['value'] = is_numeric($variant->field_v_cgst[LANGUAGE_NONE][0]['value']) ? $variant->field_v_cgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_sgst[LANGUAGE_NONE][0]['value'] = is_numeric($variant->field_v_sgst[LANGUAGE_NONE][0]['value']) ? $variant->field_v_sgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_igst[LANGUAGE_NONE][0]['value'] = is_numeric($variant->field_v_igst[LANGUAGE_NONE][0]['value']) ? $variant->field_v_igst[LANGUAGE_NONE][0]['value'] : '0';
+  }
+  elseif($identifier == 'T') {
+    $vproduct->field_cgst[LANGUAGE_NONE][0]['value'] = is_numeric($variant->field_t_cgst[LANGUAGE_NONE][0]['value']) ? $variant->field_t_cgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_sgst[LANGUAGE_NONE][0]['value'] = is_numeric($variant->field_t_sgst[LANGUAGE_NONE][0]['value']) ? $variant->field_t_sgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_igst[LANGUAGE_NONE][0]['value'] = is_numeric($variant->field_t_igst[LANGUAGE_NONE][0]['value']) ? $variant->field_t_igst[LANGUAGE_NONE][0]['value'] : '0';
+  }
+  elseif($identifier == 'LM') {
+    $vproduct->field_cgst[LANGUAGE_NONE][0]['value'] = is_numeric($variant->field_lm_cgst[LANGUAGE_NONE][0]['value']) ? $variant->field_lm_cgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_sgst[LANGUAGE_NONE][0]['value'] = is_numeric($variant->field_lm_sgst[LANGUAGE_NONE][0]['value']) ? $variant->field_lm_sgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_igst[LANGUAGE_NONE][0]['value'] = is_numeric($variant->field_lm_igst[LANGUAGE_NONE][0]['value']) ? $variant->field_lm_igst[LANGUAGE_NONE][0]['value'] : '0';
+  }
+  elseif($identifier == 'LV') {
+    $vproduct->field_cgst[LANGUAGE_NONE][0]['value'] = is_numeric($variant->field_lv_cgst[LANGUAGE_NONE][0]['value']) ? $variant->field_lv_cgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_sgst[LANGUAGE_NONE][0]['value'] = is_numeric($variant->field_lv_sgst[LANGUAGE_NONE][0]['value']) ? $variant->field_lv_sgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_igst[LANGUAGE_NONE][0]['value'] = is_numeric($variant->field_lv_igst[LANGUAGE_NONE][0]['value']) ? $variant->field_lv_igst[LANGUAGE_NONE][0]['value'] : '0';
+  }
+  elseif($identifier == 'LT') {
+    $vproduct->field_cgst[LANGUAGE_NONE][0]['value'] = is_numeric($variant->field_lt_cgst[LANGUAGE_NONE][0]['value']) ? $variant->field_lt_cgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_sgst[LANGUAGE_NONE][0]['value'] = is_numeric($variant->field_lt_sgst[LANGUAGE_NONE][0]['value']) ? $variant->field_lt_sgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_igst[LANGUAGE_NONE][0]['value'] = is_numeric($variant->field_lt_igst[LANGUAGE_NONE][0]['value']) ? $variant->field_lt_igst[LANGUAGE_NONE][0]['value'] : '0';
+  }
+  $vproduct->field_e_cgst[LANGUAGE_NONE][0]['value'] = is_numeric($variant->field_e_cgst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_e_cgst[LANGUAGE_NONE][0]['value'] : '0';
+  $vproduct->field_e_sgst[LANGUAGE_NONE][0]['value'] = is_numeric($variant->field_e_sgst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_e_sgst[LANGUAGE_NONE][0]['value'] : '0';
+  $vproduct->field_e_igst[LANGUAGE_NONE][0]['value'] = is_numeric($variant->field_e_igst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_e_igst[LANGUAGE_NONE][0]['value'] : '0';
+  commerce_product_save($vproduct);
+  return $vproduct;
+}
+
+function bombayliving_update_product_variants($vproduct = NULL, $prod = NULL, $material = NULL, $amount = NULL, $stock = 0, $identifier = NULL, $stock_prod = NULL) {
+  $vproduct->title = $prod->title;
+  $vproduct->title_field[LANGUAGE_NONE][0]['value'] = $prod->title;
+  $vproduct->language = $prod->language;
+  $vproduct->type = $prod->type; 
+  $vproduct->field_fill[LANGUAGE_NONE][0]['tid'] = $prod->field_fill[LANGUAGE_NONE][0]['tid'];
+  $vproduct->field_size[LANGUAGE_NONE][0]['tid'] = $prod->field_size[LANGUAGE_NONE][0]['tid'];
+  $vproduct->field_fabric[LANGUAGE_NONE][0]['value'] = $prod->field_fabric[LANGUAGE_NONE][0]['value'];
+  $vproduct->field_velvet[LANGUAGE_NONE][0]['value'] = $prod->field_velvet[LANGUAGE_NONE][0]['value'];
+  $vproduct->field_texture[LANGUAGE_NONE][0]['value'] = $prod->field_texture[LANGUAGE_NONE][0]['value'];
+  $vproduct->field_leather_mastro[LANGUAGE_NONE][0]['value'] = $prod->field_leather_mastro[LANGUAGE_NONE][0]['value'];
+  $vproduct->field_leather_vagabond[LANGUAGE_NONE][0]['value'] = $prod->field_leather_vagabond[LANGUAGE_NONE][0]['value'];
+  $vproduct->field_leather_tango[LANGUAGE_NONE][0]['value'] = $prod->field_leather_tango[LANGUAGE_NONE][0]['value'];
+  $vproduct->field_category_color[LANGUAGE_NONE][0]['value'] = $prod->field_category_color[LANGUAGE_NONE][0]['value'];
+  $vproduct->commerce_stock[LANGUAGE_NONE][0]['value'] = $stock;
+  $vproduct->field_newsletter_body[LANGUAGE_NONE][0]['value'] = $prod->field_newsletter_body[LANGUAGE_NONE][0]['value'];
+  $vproduct->field_specifications[LANGUAGE_NONE][0]['value'] = $prod->field_specifications[LANGUAGE_NONE][0]['value'];
+  $vproduct->field_dimensions[LANGUAGE_NONE][0]['value'] = $prod->field_dimensions[LANGUAGE_NONE][0]['value'];
+  $vproduct->field_packing[LANGUAGE_NONE][0]['amount'] = $prod->field_packing[LANGUAGE_NONE][0]['amount'];
+  $vproduct->field_packing[LANGUAGE_NONE][0]['currency_code'] = $prod->field_packing[LANGUAGE_NONE][0]['currency_code'];
+  $vproduct->field_shipping_insurance[LANGUAGE_NONE][0]['amount'] = $prod->field_shipping_insurance[LANGUAGE_NONE][0]['amount'];
+  $vproduct->field_shipping_insurance[LANGUAGE_NONE][0]['currency_code'] = $prod->field_shipping_insurance[LANGUAGE_NONE][0]['currency_code'];
+  $vproduct->uid = 5;
+  $vproduct->commerce_price[LANGUAGE_NONE][0] = array(
+    'amount' => ($amount*100), // $10
+    'currency_code' => $prod->commerce_price[LANGUAGE_NONE][0]['currency_code'],
+  );
+  $vproduct->field_material[LANGUAGE_NONE][0]['tid'] = $material;
+  $vproduct->status = $prod->status;
+  // Set GST info.
+  if($identifier == 'V') {
+    $vproduct->field_cgst[LANGUAGE_NONE][0]['value'] = is_numeric($stock_prod->field_v_cgst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_v_cgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_sgst[LANGUAGE_NONE][0]['value'] = is_numeric($stock_prod->field_v_sgst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_v_sgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_igst[LANGUAGE_NONE][0]['value'] = is_numeric($stock_prod->field_v_igst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_v_igst[LANGUAGE_NONE][0]['value'] : '0';
+  }
+  elseif($identifier == 'T') {
+    $vproduct->field_cgst[LANGUAGE_NONE][0]['value'] = is_numeric($stock_prod->field_t_cgst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_t_cgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_sgst[LANGUAGE_NONE][0]['value'] = is_numeric($stock_prod->field_t_sgst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_t_sgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_igst[LANGUAGE_NONE][0]['value'] = is_numeric($stock_prod->field_t_igst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_t_igst[LANGUAGE_NONE][0]['value'] : '0';
+  }
+  elseif($identifier == 'LM') {
+    $vproduct->field_cgst[LANGUAGE_NONE][0]['value'] = is_numeric($stock_prod->field_lm_cgst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_lm_cgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_sgst[LANGUAGE_NONE][0]['value'] = is_numeric($stock_prod->field_lm_sgst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_lm_sgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_igst[LANGUAGE_NONE][0]['value'] = is_numeric($stock_prod->field_lm_igst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_lm_igst[LANGUAGE_NONE][0]['value'] : '0';
+  }
+  elseif($identifier == 'LV') {
+    $vproduct->field_cgst[LANGUAGE_NONE][0]['value'] = is_numeric($stock_prod->field_lv_cgst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_lv_cgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_sgst[LANGUAGE_NONE][0]['value'] = is_numeric($stock_prod->field_lv_sgst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_lv_sgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_igst[LANGUAGE_NONE][0]['value'] = is_numeric($stock_prod->field_lv_igst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_lv_igst[LANGUAGE_NONE][0]['value'] : '0';
+  }
+  elseif($identifier == 'LT') {
+    $vproduct->field_cgst[LANGUAGE_NONE][0]['value'] = is_numeric($stock_prod->field_lt_cgst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_lt_cgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_sgst[LANGUAGE_NONE][0]['value'] = is_numeric($stock_prod->field_lt_sgst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_lt_sgst[LANGUAGE_NONE][0]['value'] : '0';
+    $vproduct->field_igst[LANGUAGE_NONE][0]['value'] = is_numeric($stock_prod->field_lt_igst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_lt_igst[LANGUAGE_NONE][0]['value'] : '0';
+  }
+  $vproduct->field_e_cgst[LANGUAGE_NONE][0]['value'] = is_numeric($stock_prod->field_e_cgst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_e_cgst[LANGUAGE_NONE][0]['value'] : '0';
+  $vproduct->field_e_sgst[LANGUAGE_NONE][0]['value'] = is_numeric($stock_prod->field_e_sgst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_e_sgst[LANGUAGE_NONE][0]['value'] : '0';
+  $vproduct->field_e_igst[LANGUAGE_NONE][0]['value'] = is_numeric($stock_prod->field_e_igst[LANGUAGE_NONE][0]['value']) ? $stock_prod->field_e_igst[LANGUAGE_NONE][0]['value'] : '0';
+  commerce_product_save($vproduct);
+  return $vproduct;
+}
+
+function _swatches($id) {
+  // Get cached data.
+  if($cached = cache_get('swatches_' . $id . '_blapi', 'cache'))  {
+    $swatchs = $cached->data;
+  }
+  if(empty($swatchs)) {
+    $swatches = taxonomy_get_tree($id);
+    $swatchs = [];
+    if (!empty($swatches)) {
+      foreach ($swatches as $tid => $value) {
+        $product = taxonomy_term_load($value->tid);
+        $swatchs[] = array(
+          'id' => $product->tid,
+          'name' => $product->name,
+          'img' => !empty($product->field_single_image[LANGUAGE_NONE][0]['uri']) ? file_create_url($product->field_single_image[LANGUAGE_NONE][0]['uri']) : '',
+          'availibility' => !empty($product->field_availabe[LANGUAGE_NONE][0]['value']) ? '1' : '0',
+        );
+      }
+      cache_set('swatches_' . $id . '_blapi', $swatchs, 'cache', strtotime('+1 month')); //1 day.
+    }
+  }
+  // Output.
+  return $swatchs;
+}
+
+function bombayliving_modules_enabled($modules) {
+  cache_clear_all('plugins:feeds:plugins', 'cache');
+}
+
+function _subscribe_newletter($uid = NULL){
+  if($uid != 1) {
+    $params = drupal_get_query_parameters();
+    $form_state = array();
+    $form_state['values']['field_newsletter_list'][LANGUAGE_NONE][0]['target_id'] = 2;
+    $form_state['values']['email'] = $params['email'];
+    $form_state['values']['uid'] = $uid;
+    $form_state['values']['op'] = 'Subscribe';
+    $form_state['values']['submit'] = 'Subscribe';
+    drupal_form_submit('newsletter_manage_subscriptions_form', $form_state);
+    if (form_get_errors() != '') {
+      print 'error';exit;
+    }
+    else {
+      print 'success';exit;
+    }
+  }
+}
+
+function _about_us() {
+  // Get about us data.
+  $about_us = node_load_multiple(array(2), array('type' => 'page', 'status' => 1));
+  $about_us = array_shift($about_us);
+  $output['title'] = $about_us->title;
+  $output['description'] = $about_us->body[LANGUAGE_NONE][0]['value'];
+  $output['image'] = file_create_url($about_us->field_single_image[LANGUAGE_NONE][0]['uri']);
+
+  // Output about us json.
+  print json_encode($output); exit;
+}
+
+function _get_architect_by_id($nid = NULL) {
+  $output = [];
+  // Get cached data.
+  if($cached = cache_get('architect_' . $nid . '_blapi', 'cache'))  {
+    $output = $cached->data;
+  }
+  if(empty($output)) {
+    // Get architect data.
+    $architect = node_load($nid);
+    if(!empty($architect->field_projects[LANGUAGE_NONE])) {
+      $output['title'] = $architect->title_field[LANGUAGE_NONE][0]['value'];
+      $output['headline'] = $architect->field_headline[LANGUAGE_NONE][0]['value'];
+      $output['image'] = file_create_url($architect->field_single_image[LANGUAGE_NONE][0]['uri']);
+      foreach($architect->field_projects[LANGUAGE_NONE] as $key => $projects) {
+        $project = field_collection_item_load($projects['value'], $reset = FALSE);
+        $output['projects'][$key]['title'] = $project->field_project_title[LANGUAGE_NONE][0]['value'];
+        foreach($project->field_image[LANGUAGE_NONE] as $k => $image) {
+          $output['projects'][$key]['images'][] = file_create_url($image['uri']);
+        }
+        $output['projects'][$key]['id'] = $key;
+      }
+      cache_set('architect_' . $nid . '_blapi', $output, 'cache', strtotime('+1 month')); //1 day.
+    }
+  }
+  
+  // Output architect json.
+  print json_encode($output); exit;
+}
+
+function _get_architects() {
+  $output = [];
+  // Get cached data.
+  if($cached = cache_get('architects_blapi', 'cache'))  {
+    $output = $cached->data;
+  }
+  if(empty($output)) {
+    // Get architects data.
+    $query = new EntityFieldQuery();
+    $query->entityCondition('entity_type', 'node');
+    $query->entityCondition('bundle', 'homepage_architects');
+    $query->fieldOrderBy('field_weight', 'value', 'ASC');
+    $query->propertyCondition('status', 1);
+    $architects = $query->execute();
+    foreach($architects['node'] as $architect) {
+      $data = node_load($architect->nid);
+      if(!empty($data->field_projects[LANGUAGE_NONE])) {
+        $output[] = array(
+          'title' => $data->title_field[LANGUAGE_NONE][0]['value'],
+          'tagline' => $data->field_headline[LANGUAGE_NONE][0]['value'],
+          'image' => file_create_url($data->field_single_image[LANGUAGE_NONE][0]['uri']),
+          'id' => $architect->nid,
+        );
+      }
+    }
+    cache_set('architects_blapi', $output, 'cache', strtotime('+1 month')); //1 day.
+  }
+  print json_encode($output); exit;
+}
+
+function _get_gallery() {
+  $output = [];
+  // Get cached data.
+  if($cached = cache_get('gallery_blapi', 'cache'))  {
+    $output = $cached->data;
+  }
+  if(empty($output)) {
+    // Get architects data.
+    $query = new EntityFieldQuery();
+    $query->entityCondition('entity_type', 'node');
+    $query->entityCondition('bundle', 'homepage_architects');
+    $query->fieldOrderBy('field_weight', 'value', 'ASC');
+    $query->propertyCondition('status', 1);
+    $architects = $query->execute();
+    if (isset($architects['node'])) {
+      $news_items_nids = array_keys($architects['node']);
+      $news_items = entity_load('node', $news_items_nids);
+      foreach($news_items as $i => $data) {
+        if(!empty($data->field_projects[LANGUAGE_NONE])) {
+          $output[$i]['nid'] = $i;
+          $output[$i]['architect_name'] = $data->title_field[LANGUAGE_NONE][0]['value'];
+          foreach($data->field_projects[LANGUAGE_NONE] as $key => $projects) {
+            $project = field_collection_item_load($projects['value'], $reset = FALSE);
+            $output[$i]['projects'][$key]['title'] = $project->field_project_title[LANGUAGE_NONE][0]['value'];
+            foreach($project->field_image[LANGUAGE_NONE] as $k => $image) {
+              $output[$i]['projects'][$key]['images'][] = file_create_url($image['uri']);
+            }
+            $output[$i]['id'] = $key;
+          }
+        }
+      }
+      cache_set('gallery_blapi', $output, 'cache', strtotime('+1 month')); //1 day.
+    }
+  }
+  print json_encode($output); exit;
+}
+
+function _get_gallery_by_id($nid = NULL, $id = NULL) {
+  $output = [];
+  // Get gallery details.
+  $data = node_load($nid);
+  if(!empty($data->field_projects[LANGUAGE_NONE])) {
+    $output['architect_name'] = $data->title_field[LANGUAGE_NONE][0]['value'];
+    foreach($data->field_projects[LANGUAGE_NONE] as $key => $projects) {
+      if($key == $id) {
+        $project = field_collection_item_load($projects['value'], $reset = FALSE);
+        $output['project_title'] = $project->field_project_title[LANGUAGE_NONE][0]['value'];
+        foreach($project->field_image[LANGUAGE_NONE] as $k => $image) {
+          $output['images'][$k] = file_create_url($image['uri']);
+        }
+      }
+    }
+  }
+  print json_encode($output); exit;
+}
+
+function _bombayliving_register_user() {
+  // Disable caching.
+  drupal_page_is_cacheable(FALSE);
+
+  $file_content = file_get_contents('php://input');
+  $contents = json_decode($file_content, TRUE);
+  if(!empty($contents)) {
+    $data = $contents;
+  }
+  else {
+    print json_encode(array('error' => array('code' => 404, 'message' => 'Please fill required inputs.')));
+    exit;
+  }
+
+  if(!empty($data['mail']) && !empty($data['pass'])) {
+    // Check first if user exists.
+    $user_exists = user_load_by_name(filter_xss($data['mail']));
+    if(!empty($user_exists)) {
+      print json_encode(array('error' => array('code' => 406, 'message' => 'User already registered.')));
+      exit;
+    }
+
+    $new_user = array(
+      'pass' => filter_xss($data['pass']),
+      'name' => filter_xss($data['mail']),
+      'mail' => filter_xss($data['mail']),
+      'signature_format' => 'full_html',
+      'status' => 1,
+      'language' => 'en',
+      'timezone' => 'Asia/Kolkata',
+      'init' => 'Email',
+      'roles' => array(
+        '2' => 'authenticated user',
+      ),
+      'field_first_name' => array(
+        'und' => array(
+          0 => array(
+            'value' => !empty($data['first_name']) ? filter_xss($data['first_name']) : '',
+          ),
+        ),
+      ),
+      'field_last_name' => array(
+        'und' => array(
+          0 => array(
+            'value' => !empty($data['last_name']) ? filter_xss($data['last_name']) : '',
+          ),
+        ),
+      ),
+      'field_number' => array(
+        'und' => array(
+          0 => array(
+            'value' => !empty($data['number']) ? filter_xss($data['number']) : '',
+          ),
+        ),
+      )
+    );
+
+    foreach($data['address'] as $k => $add) {
+      $add = explode("|", $add);
+      $new_user['field_add1']['und'][$k]['country'] = 'IN';
+      $new_user['field_add1']['und'][$k]['thoroughfare'] = filter_xss($add[0]);
+      $new_user['field_add1']['und'][$k]['premise'] = filter_xss($add[1]);
+      $new_user['field_add1']['und'][$k]['locality'] = filter_xss($add[2]);
+      $new_user['field_add1']['und'][$k]['administrative_area'] = filter_xss($add[3]);
+      $new_user['field_add1']['und'][$k]['postal_code'] = filter_xss($add[4]);
+    }
+    
+    $account = user_save(NULL, $new_user);
+    print json_encode($account);
+    exit;
+  }
+  else {
+    print json_encode(array('error' => array('code' => 404, 'message' => 'Please fill required inputs.')));
+    exit;
+  }
+}
+
+
+/**
+ * @file
+ * Module file for Housing Schemes Services.
+ * Contains the resource declarations for the service APIs
+ * and other commons functions/hooks. if necessary
+ */
+
+/**
+ * Implements hook_services_resources().
+ * Create service resource for APIs to return the necessary json data.
+ */
+function bombayliving_services_resources() {
+  $resources = array();
+
+//Include the necessary inc files.
+  module_load_include('inc', 'bombayliving', 'include/bombayliving.resources');
+
+//Service Apis for contents.
+  $resources += bombayliving_services_resource();
+
+  return $resources;
+}
+
+
+/* Hooks provided by Drupal core and the System module. */
+function bombayliving_entity_load($entities, $type) {
+  foreach ($entities as $entity) {
+    if(!empty($entity->type) && $entity->type == 'commerce_order') {
+      $entity->cgst = 0;
+      $entity->sgst = 0;
+      $entity->ecgst = 0;
+      $entity->esgst = 0;
+      if(!empty($entity->commerce_line_items[LANGUAGE_NONE])) {
+        foreach($entity->commerce_line_items[LANGUAGE_NONE] as $li) {
+          $line_item = commerce_line_item_load($li['line_item_id']);
+          if(!empty($line_item->commerce_product[LANGUAGE_NONE][0]['product_id'])) {
+            $variant = commerce_product_load($line_item->commerce_product[LANGUAGE_NONE][0]['product_id']);
+            // Set CGST.
+            $entity->cgst = $entity->cgst + $variant->field_cgst[LANGUAGE_NONE][0]['value'];
+            // Set SGST.
+            $entity->sgst = $entity->sgst + $variant->field_sgst[LANGUAGE_NONE][0]['value'];
+            // Set IGST.
+            //$entity->igst = $variant->field_igst[LANGUAGE_NONE][0]['value'];
+            // Set ECGST.
+            $entity->ecgst = $entity->ecgst + $variant->field_e_cgst[LANGUAGE_NONE][0]['value'];
+            // Set ESGST.
+            $entity->esgst = $entity->esgst + $variant->field_e_sgst[LANGUAGE_NONE][0]['value'];
+            // Set EIGST.
+            //$entity->eigst = $variant->field_e_igst[LANGUAGE_NONE][0]['value'];
+            $query = new EntityFieldQuery;
+            $query->entityCondition('entity_type', 'node', '=')
+            ->propertyCondition('type', array('bags_cases', 'drinks'), 'IN')
+            ->fieldCondition('field_product', 'product_id', $line_item->commerce_product[LANGUAGE_NONE][0]['product_id'], '=')
+            ->range(0, 1);
+            $result = $query->execute();
+            if(!empty($result)) {
+              $nid = array_shift($result['node']);
+              $node = node_load($nid->nid);
+              if(!empty($node->field_images[LANGUAGE_NONE][0]['uri'])) {
+                $entity->product_images[] = file_create_url($node->field_images[LANGUAGE_NONE][0]['uri']);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+function _update_user() {
+  require_once DRUPAL_ROOT . '/' . variable_get('password_inc', 'includes/password.inc');
+  // Takes raw data from the request
+  $json = file_get_contents('php://input');
+  // Converts it into a PHP object
+  $data = json_decode($json);
+  
+  // If no token is sent, load anonymous.
+  if (!isset($_SERVER['HTTP_X_USER_SESSION_TOKEN'])) {
+    $user = drupal_anonymous_user();
+    $user->timestamp = time();
+    session_id(drupal_random_key());
+    print json_encode(array('error' => array('code' => 404, 'message' => 'Access denied for anonymous user.')));
+    exit;
+  }
+  // Else, if session is sent, load user.
+  elseif(isset($_SERVER['HTTP_X_USER_SESSION_TOKEN']) && !empty($_SERVER['HTTP_X_USER_SESSION_TOKEN'])) {
+    // Inspired by session.inc _drupal_session_read() function.
+    $sid = $_SERVER['HTTP_X_USER_SESSION_TOKEN'];
+
+    // Otherwise, if the session is still active, we have a record of the
+    // client's session in the database. If it's HTTPS then we are either have
+    // a HTTPS session or we are about to log in so we check the sessions table
+    // for an anonymous session with the non-HTTPS-only cookie.
+    global $is_https;
+    if ($is_https) {
+      $user = db_query("SELECT u.*, s.* FROM {users} u INNER JOIN {sessions} s ON u.uid = s.uid WHERE s.ssid = :ssid", array(':ssid' => $sid))->fetchObject();
+    }
+    else {
+      $user = db_query("SELECT u.*, s.* FROM {users} u INNER JOIN {sessions} s ON u.uid = s.uid WHERE s.sid = :sid", array(':sid' => $sid))->fetchObject();
+    }
+
+    // We found the client's session record and they are an authenticated,
+    // active user.
+    if ($user && $user->uid > 0 && $user->status == 1 && $data->uid == $user->uid) {
+      $existingUser = user_load($data->uid);
+      if(!empty($data->first_name)) {
+        $existingUser->field_first_name['und'][0]['value'] = $data->first_name;
+      }
+      if(!empty($data->last_name)) {
+        $existingUser->field_last_name['und'][0]['value'] = $data->last_name;
+      }
+      if(!empty($data->add1)) {
+        unset($existingUser->field_add1['und']);
+        foreach($data->add1 as $key => $add) {
+          $existingUser->field_add1['und'][$key]['country'] = $add->country;
+          $existingUser->field_add1['und'][$key]['thoroughfare'] = $add->thoroughfare;
+          $existingUser->field_add1['und'][$key]['premise'] = $add->premise;
+          $existingUser->field_add1['und'][$key]['locality'] = $add->locality;
+          $existingUser->field_add1['und'][$key]['administrative_area'] = $add->administrative_area;
+          $existingUser->field_add1['und'][$key]['postal_code'] = $add->postal_code;
+        }
+      }
+      if(!empty($data->add2)) {
+        unset($existingUser->field_add2['und']);
+        foreach($data->add2 as $key => $add) {
+          $existingUser->field_add2['und'][$key]['country'] = $add->country;
+          $existingUser->field_add2['und'][$key]['thoroughfare'] = $add->thoroughfare;
+          $existingUser->field_add2['und'][$key]['premise'] = $add->premise;
+          $existingUser->field_add2['und'][$key]['locality'] = $add->locality;
+          $existingUser->field_add2['und'][$key]['administrative_area'] = $add->administrative_area;
+          $existingUser->field_add2['und'][$key]['postal_code'] = $add->postal_code;
+        }
+      }
+      if(!empty($data->number)) {
+        $existingUser->field_number['und'][0]['value'] = $data->number;
+      }
+      if(!empty($data->pass)) {
+        $existingUser->pass = user_hash_password($data->pass);
+      }
+      $status = user_save($existingUser);
+      echo json_encode(array($status));exit;
+    }
+  }
+}
+
+function bombayliving_cron() {
+  // Load all orders with order_placed status and set order status to in_making.
+  $orders = commerce_order_load_multiple(array(), array('status' => 'order_placed'), TRUE);
+  foreach($orders as $order){
+    $now = time(); // or your date as well
+    $order_date = $order->created;
+    $datediff = ($now - $order_date);
+    $days = round($datediff / 86400);
+    if($days > 1) {
+      //change the status of the order to in_making.
+      //load each order as an entity.
+      $order_wrapper = entity_metadata_wrapper('commerce_order', $order);  
+      $order_wrapper->status = 'in_making';
+      $order_wrapper->save();
+    }
+  }
+
+  // Load all orders with in_making status and set order status to shipped.
+  $orders = commerce_order_load_multiple(array(), array('status' => 'in_making'), TRUE);
+  foreach($orders as $order){
+    $now = time(); // or your date as well
+    $order_date = $order->changed;
+    $datediff = ($now - $order_date);
+    $days = round($datediff / 86400);
+    if($days > 39) {
+      //change the status of the order to in_making.
+      //load each order as an entity.
+      $order_wrapper = entity_metadata_wrapper('commerce_order', $order);  
+      $order_wrapper->status = 'shipped';
+      $order_wrapper->save();
+    }
+  }
+
+  // Load all orders with shipped status and set order status to delivered.
+  $orders = commerce_order_load_multiple(array(), array('status' => 'shipped'), TRUE);
+  foreach($orders as $order){
+    $now = time(); // or your date as well
+    $order_date = $order->changed;
+    $datediff = ($now - $order_date);
+    $days = round($datediff / 86400);
+    if($days > 7) {
+      //change the status of the order to in_making.
+      //load each order as an entity.
+      $order_wrapper = entity_metadata_wrapper('commerce_order', $order);  
+      $order_wrapper->status = 'delivered';
+      $order_wrapper->save();
+    }
+  }
+}

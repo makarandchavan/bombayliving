@@ -1,0 +1,1068 @@
+<?php
+
+/**
+ * @file
+ * This module helps to handle custom code.
+ */
+ 
+require_once __DIR__ . '/include/dompdf/autoload.inc.php';
+//require_once __DIR__ . '/include/simple-excel-php/src/SimpleExcel/SimpleExcel.php';
+require DRUPAL_ROOT . '/vendor/autoload.php';
+require_once __DIR__ . '/include/tcpdf/tcpdf.php';
+require_once __DIR__ . '/include/phpexcel/Classes/PHPExcel.php';
+require_once __DIR__ . '/include/phpexcel/Classes/PHPExcel/IOFactory.php';
+use Dompdf\Dompdf;
+use SimpleExcel\SimpleExcel;
+
+
+// Implements hook_menu.
+function blapi_custom_menu() {
+  $items = array();
+
+  // $items['blapi/invoice'] = array(
+  //   'title' => 'Invoice',
+  //   'page callback' => '_generate_invoice',
+  //   'access arguments' => array(
+  //     'access content',
+  //   ),
+  //   'type' => MENU_CALLBACK,
+  // );
+  
+  $items['blapi/wishlist'] = array(
+    'title' => 'Wishlist',
+    'page callback' => '_wishlist',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+  
+  $items['blapi/wishlist/add'] = array(
+    'title' => 'Add To Wishlist',
+    'page callback' => 'add_to_wishlist',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+  
+  $items['blapi/wishlist/remove'] = array(
+    'title' => 'Remove Wishlist Item',
+    'page callback' => 'remove_wishlist_item',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+  
+  $items['blapi/notify'] = array(
+    'title' => 'Send Stock Notifications',
+    'page callback' => '_stock_notification',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['blapi/sendemail'] = array(
+    'title' => 'Send Email',
+    'page callback' => '_send_email',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+
+
+  $items['blapi/validate-coupon'] = array(
+    'title' => 'Validate Coupon',
+    'page callback' => 'validate_coupon',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+  
+  $items['blapi/user-newsletter/%'] = array(
+    'title' => 'User Newsletter Subscription',
+    'page callback' => 'user_subscribe_newsletter',
+    'page arguments' => array(1),
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+  
+  $items['blapi/nl-subscription-status/%'] = array(
+    'title' => 'User Newsletter Subscription Status',
+    'page callback' => 'user_newsletter_subscription_status',
+    'page arguments' => array(1),
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+  
+  $items['blapi/reports'] = array(
+    'title' => 'Reports',
+    'page callback' => '_reports',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+  
+  $items['blapi/get-pincodes'] = array(
+    'title' => 'All Pincodes of India',
+    'page callback' => 'get_pincodes',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+function get_pincodes(){
+    $params = drupal_get_query_parameters();
+    $isBlackList = $params['isBlackList'];
+    $pincode = filter_xss($params['pincode']);
+    $query = db_query("SELECT pincode FROM {pincodes} WHERE city_name=:city", array(':city' => 'Mumbai'));
+    $pincodes = $query->fetchAllKeyed(0,0);
+    if(!empty($pincode) && in_array($pincode, $pincodes)) {
+      print json_encode(array(true));exit;
+    }
+    print json_encode(array(false));exit;
+
+    // if($isBlackList == 'true'){
+    //     if($pincode){
+    //         $blacklist = db_update('pincodes')
+    //             ->fields(array('status' => 'blacklist'))
+    //             ->condition('pincode', $pincode)
+    //             ->execute();
+    //         if($blacklist){
+    //             print 'Pincode has been blacklisted';exit;
+    //         }
+    //         else{
+    //             print 'Pincode already blacklisted';exit;
+    //         }
+    //     }
+    //     else{
+    //         print 'Missing parameters: pincode needed';exit;
+    //     }
+    // }
+    // elseif($isBlackList == 'false'){
+    //     if($pincode){
+    //         $whitelist = db_update('pincodes')
+    //             ->fields(array('status' => 'whitelist'))
+    //             ->condition('pincode', $pincode)
+    //             ->execute();
+    //         if($whitelist){
+    //             print 'Pincode has been whitelisted';exit;
+    //         }
+    //         else{
+    //             print 'Pincode already whitelisted';exit;
+    //         }
+    //     }
+    //     else{
+    //         print 'Missing parameters: pincode needed';exit;
+    //     }
+    // }
+    // else{
+    //   $query = db_query("SELECT * FROM {pincodes} WHERE status= :status", array(':status' => 'whitelist'));
+    //   $pincodes = (object) $query->fetchAll();
+    //   print json_encode($pincodes);exit;
+    // }
+}
+
+function _reports(){
+    // module_load_include('module', 'commerce_reports_stock', 'commerce_reports_stock');
+    // $stocks = _commerce_reports_stock_calculate_dataset($sku = NULL, $key = NULL, $reset = FALSE);
+    // $query = db_query("SELECT * FROM {commerce_order} WHERE status IN :status", array(':status' => array('pending','checkout_payment')));
+    // $orders = (object) $query->fetchAll();
+    $reports_data = [];
+
+    $query = db_select('commerce_line_item', 'l');
+    $query->innerjoin('commerce_order', 'o', 'l.order_id = o.order_id');
+    $query->innerjoin('field_data_commerce_product', 'cp', 'cp.entity_id = l.line_item_id');
+    $query->fields('cp', array('commerce_product_product_id'))
+      ->fields('l', array('quantity','line_item_id'))
+      ->fields('o',array('placed','uid','order_id'))
+      ->condition('o.status', array('pending','completed'),'IN');
+    $query->orderBy("o.placed", "ASC");
+    $result = $query->execute()->fetchAll();
+    
+    $reports_data = getProductsReport($result);
+    
+    $firstOrderDate = $result[0]->placed;
+    $now = time(); // or your date as well
+    $datediff = $now - $firstOrderDate;
+    $total_no_of_days = round($datediff / (60 * 60 * 24));
+    $total_months = $total_no_of_days/30.4 ;
+    
+    //Monthly, yearly, daily, weekly reports
+    $nowDate = date('Y-m-d');
+    $curr_date = strtotime($nowDate);
+    /*$prevWeek = strtotime($nowDate. ' -1 week');
+    $prevMonth = strtotime($nowDate. ' -1 month');*/
+    $prevYear = strtotime($nowDate. ' -1 year');
+    
+    //Weeks of current financial year.
+    $noOfWeeks = date( 'W', strtotime( date('Y-m-d') ) ) - date( 'W', strtotime( date('Y-04-01') ) );
+
+    $startDate = date('Y-04-01');
+    $weeks = [];
+    for($x=0; $x<$noOfWeeks; $x++){
+    	if($nextWeek){
+    		$startDate = date('Y-m-d',$nextWeek);
+    	}
+        else{
+        	$weeks[] = $startDate;
+        }
+    	$nextWeek = strtotime($startDate. ' +1 week');
+    	$weeks[] = date('Y-m-d',$nextWeek);
+    }
+    
+    //Weekly report - overall
+    $weekly_reports = [];
+    foreach($weeks as $key => $week){
+        
+    	$start_wk = strtotime($weeks[$key]);
+    	$end_wk = $weeks[$key+1] ? strtotime($weeks[$key+1]) : strtotime(date('Y-m-d 23:59:59'));
+    	
+    	if($end_wk){
+    	    $week_query = db_select('commerce_line_item', 'l');
+            $week_query->innerjoin('commerce_order', 'o', 'l.order_id = o.order_id');
+            $week_query->innerjoin('field_data_commerce_product', 'cp', 'cp.entity_id = l.line_item_id');
+            $week_query->fields('cp', array('commerce_product_product_id'))
+              ->fields('l', array('quantity','line_item_id'))
+              ->fields('o',array('placed','uid','order_id'))
+              ->condition('o.placed', array($start_wk, $end_wk), 'BETWEEN')
+              ->condition('o.status', array('pending','completed'),'IN');
+            $week_result = $week_query->execute()->fetchAll();
+            $week_report = getProductsReport($week_result);
+            $index = 'week_'.($key+1);
+            $weekly_reports[$index] = [
+                'total_sales' => $week_report['total_sales'],
+                'total_revenue' => $week_report['total_revenue']
+                ];
+    	}
+    }
+    $reports_data['weekly_reports'] = $weekly_reports;
+    
+    //Monthly report overall
+  /*  $startDate = date('Y-m-d',$firstOrderDate);
+    $nowDate = date("Y-m-d"); 
+    
+    $ts1 = strtotime($startDate);
+    $ts2 = strtotime($nowDate);
+    
+    $year1 = date('Y', $ts1);
+    $year2 = date('Y', $ts2);
+    
+    $month1 = date('m', $ts1);
+    $month2 = date('m', $ts2);
+    
+    $noOfMonths = (($year2 - $year1) * 12) + ($month2 - $month1);*/
+    
+    $st_Date = $firstOrderDate ? date('Y-m-d',$firstOrderDate) : date('Y-01-01');
+     
+    $d1 = new DateTime($st_Date);
+    $d2 = new DateTime($nowDate);
+    $no_of_months = $d1->diff($d2)->m + ($d1->diff($d2)->y*12);
+
+    $endDate = date('Y-m-t 23:59:59',strtotime($st_Date));
+
+    $months = [];
+    if($no_of_months){
+        for($x=0; $x<$no_of_months; $x++){
+        	if($nextMonth){
+        		$st_Date = date('Y-m-d',$nextMonth);
+                $endDate = date('Y-m-t 23:59:59',$nextMonth);
+        	}
+            else{
+            	$months[] = [
+                  'start-date' => $st_Date,
+                  'end-date' => $endDate
+                  ];
+                
+            }
+        	$nextMonth = strtotime($st_Date. ' next month');
+            $stDt = date('Y-m-d',$nextMonth);
+    		$endDt = date('Y-m-t 23:59:59', strtotime($stDt));
+        	$months[] = [
+            'start-date' => $stDt,
+    		'end-date' => $endDt
+            ];
+        }
+    }
+    else{
+        $months[] = [
+          'start-date' => $st_Date,
+          'end-date' => $endDate
+          ];
+    }
+    
+    $monthly_reports = [];
+    foreach($months as $key => $month){
+        $m = date('M',strtotime($month['start-date']));
+        $start_mo = strtotime($month['start-date']);
+    	$end_mo = strtotime($month['end-date']);
+    	
+    	if($end_mo){
+    	    $month_query = db_select('commerce_line_item', 'l');
+            $month_query->innerjoin('commerce_order', 'o', 'l.order_id = o.order_id');
+            $month_query->innerjoin('field_data_commerce_product', 'cp', 'cp.entity_id = l.line_item_id');
+            $month_query->fields('cp', array('commerce_product_product_id'))
+              ->fields('l', array('quantity','line_item_id'))
+              ->fields('o',array('placed','uid','order_id'))
+              ->condition('o.placed', array($start_mo, $end_mo), 'BETWEEN')
+              ->condition('o.status', array('pending','completed'),'IN');
+            $month_result = $month_query->execute()->fetchAll();
+            $month_report = getProductsReport($month_result);
+            $monthly_reports[$m] = [
+                'total_sales' => $month_report['total_sales'],
+                'total_revenue' => $month_report['total_revenue']
+            ];
+    	}        
+    }
+    $reports_data['monthly_reports'] = $monthly_reports;
+    
+    
+    //Yearly report overall
+    $initYear = $firstOrderDate ? date('Y', $firstOrderDate) : date('Y');
+    $yearly_reports = [];
+    for ($nYear = $initYear; $nYear <= date('Y'); $nYear++) {
+        $st_y = strtotime(date($nYear.'-01-01'));
+        $end_y = strtotime(date($nYear.'-12-31'));
+        
+        $y_query = db_select('commerce_line_item', 'l');
+        $y_query->innerjoin('commerce_order', 'o', 'l.order_id = o.order_id');
+        $y_query->innerjoin('field_data_commerce_product', 'cp', 'cp.entity_id = l.line_item_id');
+        $y_query->fields('cp', array('commerce_product_product_id'))
+          ->fields('l', array('quantity','line_item_id'))
+          ->fields('o',array('placed','uid','order_id'))
+          ->condition('o.placed', array($st_y, $end_y), 'BETWEEN')
+          ->condition('o.status', array('pending','completed'),'IN');
+        $y_result = $y_query->execute()->fetchAll();
+        $y_report = getProductsReport($y_result);
+        $yearly_reports[$nYear] = [
+            'total_sales' => $y_report['total_sales'],
+            'total_revenue' => $y_report['total_revenue']
+        ];
+    }
+    $reports_data['yearly_reports'] = $yearly_reports;
+    
+    //Daily overall report for the current year
+    $bDate = date('Y-01-01');
+    $begin = new DateTime($bDate);
+    $end = new DateTime($nowDate);
+    $end->modify('+1 day');
+    
+    $interval = DateInterval::createFromDateString('1 day');
+    $period = new DatePeriod($begin, $interval, $end);
+    
+    foreach ($period as $dt) {
+        $d = $dt->format("d-m");
+        $btime = $dt->format("Y-m-d H:i:s");
+        $st_time = strtotime($btime);
+        $etime = $dt->format("Y-m-d 23:59:59");
+        $end_time = strtotime($etime);
+        
+        $d_query = db_select('commerce_line_item', 'l');
+        $d_query->innerjoin('commerce_order', 'o', 'l.order_id = o.order_id');
+        $d_query->innerjoin('field_data_commerce_product', 'cp', 'cp.entity_id = l.line_item_id');
+        $d_query->fields('cp', array('commerce_product_product_id'))
+          ->fields('l', array('quantity','line_item_id'))
+          ->fields('o',array('placed','uid','order_id'))
+          ->condition('o.placed', array($st_time, $end_time), 'BETWEEN')
+          ->condition('o.status', array('pending','completed'),'IN');
+        $d_result = $d_query->execute()->fetchAll();
+        $d_report = getProductsReport($d_result);
+        $daily_reports[$d] = [
+            'total_sales' => $d_report['total_sales'],
+            'total_revenue' => $d_report['total_revenue']
+        ];
+    }
+    $reports_data['daily_reports'] = $daily_reports;
+    
+    
+    //Last 12 months report
+    $year_query = db_select('commerce_line_item', 'l');
+    $year_query->innerjoin('commerce_order', 'o', 'l.order_id = o.order_id');
+    $year_query->innerjoin('field_data_commerce_product', 'cp', 'cp.entity_id = l.line_item_id');
+    $year_query->fields('cp', array('commerce_product_product_id'))
+      ->fields('l', array('quantity','line_item_id'))
+      ->fields('o',array('placed','uid','order_id'))
+      ->condition('o.placed', $prevYear, '>=')
+      ->condition('o.status', array('pending','completed'),'IN');
+    $year_result = $year_query->execute()->fetchAll();
+    $year_report = getProductsReport($year_result);
+    
+    //current Date's report
+    $current_date_query = db_select('commerce_line_item', 'l');
+    $current_date_query->innerjoin('commerce_order', 'o', 'l.order_id = o.order_id');
+    $current_date_query->innerjoin('field_data_commerce_product', 'cp', 'cp.entity_id = l.line_item_id');
+    $current_date_query->fields('cp', array('commerce_product_product_id'))
+      ->fields('l', array('quantity','line_item_id'))
+      ->fields('o',array('placed','uid','order_id'))
+      ->condition('o.placed', $curr_date, '>=')
+      ->condition('o.status', array('pending','completed'),'IN');
+    $current_date_result = $current_date_query->execute()->fetchAll();
+    $today_product_report = getProductsReport($current_date_result);
+    
+    $reports_data['today_sales'] = $today_product_report['total_sales'];
+    $reports_data['today_revenue'] = $today_product_report['total_revenue'];
+    
+    
+    foreach($reports_data['product_report'] as $key =>  $product){
+        $reports_data['product_report'][$key]['avg_month_sales'] = $year_report['product_report'][$key]['sold']/$total_months;
+        $reports_data['product_report'][$key]['last_12_month_sales'] = $year_report['product_report'][$key]['sold'];
+        
+        $reports_data['product_report'][$key]['today_sales'] = $today_product_report['product_report'][$key]['sold'];
+        $reports_data['product_report'][$key]['today_revenue'] = $today_product_report['product_report'][$key]['revenue'];
+    }    
+    
+    
+    //Get all users
+    $users_query = new EntityFieldQuery;
+    $users_query->entityCondition('entity_type', 'user')
+        ->propertyCondition('uid',array(0),'NOT IN');
+    $users_result = $users_query->execute();
+    $total_users = count($users_result['user']);
+    
+    $reports_data['total_users'] = $total_users;
+    
+    
+    //Today users
+    $today_users_query = new EntityFieldQuery;
+    $today_users_query->entityCondition('entity_type', 'user')
+        ->propertyCondition('created',$curr_date,'>=')
+        ->propertyCondition('uid',array(0),'NOT IN');
+    $today_users_result = $today_users_query->execute();
+    $today_users = count($today_users_result['user']);
+    
+    $reports_data['today_users'] = $today_users;
+        
+   /* $li = commerce_line_item_load_multiple(array('60','67'));
+    $p = commerce_order_load('45');*/
+    // $sales = views_get_view_result('commerce_reports_sales','page_1');
+    // $products_revenue = views_get_view_result('commerce_reports_products','page');
+    // $products_quantity = views_get_view_result('commerce_reports_products','page_1');
+    print json_encode($reports_data);exit;
+ /*   
+    $line_items = db_select('commerce_line_item', 'l');
+    $orders = db_select('commerce_order', 'o');
+    $line_items->join($orders)
+    $records->join('commerce_line_item', 'l', 'l.order_id = o.order_id');
+    $records->fields('l', array('line_item_id'));
+    $records->condition('o.status', array('pending','completed'),'IN');
+    $records->execute();
+    //$records->fetchAll();
+    $data = count($records);    
+    foreach($records as $result){
+        $orders = $result;
+    }    */
+    
+}
+
+function getProductsReport($result){
+    $reports_data = [];
+    $products = [];
+    $total_no_of_products = 0;
+    $total_revenue = 0;
+    $total_orders = [];
+    foreach($result as $key => $line_item){
+        $product_id = $line_item->commerce_product_product_id;
+        $line_item_entity = commerce_line_item_load($line_item->line_item_id);
+        $amount = $line_item_entity->commerce_total['und'][0]['amount'];
+        $amount = substr($amount, 0, -2);
+        $quantity = $line_item->quantity;
+        if(!in_array($line_item->order_id, $total_orders)){
+            $total_orders[] = $line_item->order_id;
+        }
+        if(array_key_exists($product_id, $products)){
+            $total_no_of_products += intval($quantity);
+            $total_revenue += intval($amount);
+            $products[$product_id]['sold'] += intval($quantity);
+            $products[$product_id]['revenue'] += intval($amount);
+            continue;
+        }
+        else{
+            $product = commerce_product_load($product_id);
+            $total_no_of_products += intval($quantity);
+            $total_revenue += intval($amount);
+            
+            /*$node_query = db_select('node', 'n');
+            $node_query->innerjoin('field_data_field_product', 'fp', 'n.nid = fp.entity_id');
+            $node_query->fields('n', array('nid'))
+              ->condition('field_product_product_id', $product_id,'=');
+            $node_result = $node_query->execute()->fetchAll();*/
+
+            $node_query = new EntityFieldQuery();
+            $node_query->entityCondition('entity_type', 'node');  
+            $node_query->fieldCondition('field_product', 'product_id', $product_id, "=");
+            $node_result = $node_query->execute();  
+            $nid = key($node_result['node']);
+            $node = entity_load('node',array($nid));
+            $tag_id = $node[$nid]->field_tag['und'][0]['tid'];
+            $col_id = $node[$nid]->field_collection['und'][0]['tid'];
+            $tag = entity_load('taxonomy_term',array($tag_id));
+            $col = entity_load('taxonomy_term',array($col_id));
+            $cat_name = $tag[$tag_id]->name;
+            $col_name = $col[$col_id]->name;
+            
+            $products[$product_id] = [
+                'product_name' => $product->title,
+                'order_placed_date' => date('Y-m-d',$line_item->placed),
+                'sold' => intval($quantity),
+                'collection' => $col_name,
+                'category' => $cat_name,
+                'revenue' => intval($amount)
+                ];
+        }
+    }
+    
+    $reports_data = [
+        'total_orders' => count($total_orders),
+        'total_sales' => $total_no_of_products,
+        'total_revenue' => $total_revenue,
+        'product_report' => $products,
+        ];
+        
+    return $reports_data;
+}
+
+function user_newsletter_subscription_status(){
+    $path_args = arg();
+    $uid = $path_args[2];
+    $subscriber_array = newsletter_subscriber_load(array(), array('uid' => $uid));
+    
+    if($subscriber_array){
+        print 'User is subscribed';exit;
+    }
+    else{
+        print 'User is not subscribed';exit;
+    }
+}
+
+function user_subscribe_newsletter(){
+  $params = drupal_get_query_parameters();
+  $path_args = arg();
+  $uid = $path_args[2];
+  $isSubscribing = $params['isSubscribing'];
+  
+  if($uid != 1 || $uid != 0) {
+    $user = user_load($uid);  
+  
+    if($isSubscribing == 'true'){
+       /* $subscriber = entity_get_controller('newsletter_subscriber')->create();
+        $subscriber->email = $user->mail;
+        $subscriber->uid = $uid;
+        $subscriber->firstname = $user->name;
+        $subscriber->receive_format = 'html';
+        $needs_confirm = FALSE;*/
+        
+        $form_state = array();
+        $form_state['values']['field_newsletter_list'][LANGUAGE_NONE][0]['target_id'] = 2;
+        $form_state['values']['email'] = $user->mail;
+        $form_state['values']['firstname'] = $user->name;
+        $form_state['values']['uid'] = $uid;
+        $form_state['values']['confirmed'] = 1;
+        $form_state['values']['op'] = 'Subscribe';
+        $form_state['values']['submit'] = 'Subscribe';
+        
+        $form = drupal_get_form('newsletter_subscriber_edit');
+        // field_attach_submit('newsletter_subscriber', $subscriber, $form, $form_state);
+    
+        // $added_subscriber = entity_get_controller('newsletter_subscriber')->save($subscriber, $needs_confirm);
+        module_load_include('inc', 'newsletter', 'includes/newsletter.pages');
+        // $confirmed = newsletter_confirm($subscriber);
+        
+        //drupal_form_submit('newsletter_manage_subscriptions_form_submit', $form_state);
+        if (!valid_email_address($form_state['values']['email'])) {
+            print "This e-mail doesn't exist.";
+        }
+        elseif(newsletter_is_subscribed($user->mail)) {
+            print 'error: '.$user->mail.' is already subscribed';exit;
+        }
+        else {
+            newsletter_manage_subscriptions_form_submit($form, $form_state);
+            print 'success';exit;
+        }
+    }
+    elseif($isSubscribing == 'false'){
+        $subscriber_array = newsletter_subscriber_load(array(), array('uid' => $uid));
+        if($subscriber_array){
+            foreach($subscriber_array as $sub_obj){
+                $subscriber = $sub_obj;
+            }
+            if($subscriber){
+                if (variable_get('newsletter_send_unsubscribe', FALSE)) {
+                    newsletter_create()->sendBasic(3, $subscriber->email);
+                  }
+                  entity_get_controller('newsletter_subscriber')->delete($subscriber->nsid);
+                  print 'Unsubscribed successfully from newsletter';exit;
+            }
+        }
+        else{
+            print 'Error: No user subscribed';exit;
+        }
+    }
+    else{
+        print 'Missing parameters: isSubscribing';exit;
+    }
+  }
+}
+
+
+function validate_coupon(){
+    // $code = $_POST['code'];
+    // $order_id = $_POST['order_id'];
+    $params = drupal_get_query_parameters();
+    $code = $params['code'];
+    $order_id = $params['order_id'];
+    $code = trim($code);
+    $order = commerce_order_load($order_id);
+    $isApplying = $params['isApplying'];
+    
+    if($code && $order){
+        if($isApplying == 'true'){
+            // $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
+            // $coupon_wrapper = entity_metadata_wrapper('commerce_coupon', $coupon);
+            // $current_date = date('Y-m-d');
+            // $current_timestamp = strtotime($current_date);
+            //module_load_include('inc', 'commerce_discount', 'commerce_discount.rules');
+            //$discount_name = 'discount_15_off';
+            //$line_item_id = $order->commerce_line_items['und'][0]['line_item_id'];
+            
+            //$line_item = commerce_line_item_load($line_item_id);
+            //$discounts = commerce_coupon_order_coupon_code_discounts($code, $order);
+            $applied_coupon =  commerce_coupon_redeem_coupon_code($code, $order, $error);
+            //$apply_discount = commerce_discount_percentage($order_wrapper, $discount_name);
+            //commerce_order_save($order);
+            commerce_cart_order_refresh($order);
+            $discounted_price = $order->commerce_order_total['und'][0]['data']['components'][1] ? $order->commerce_order_total['und'][0]['data']['components'][1]['price']['amount'] : 0;
+            if($discounted_price){
+                $discounted_price = substr($discounted_price, 1, -2);
+            }
+            
+            if($applied_coupon){
+                $response = [
+                    'message' => 'Coupon is available and discount is applied',
+                    'discounted_price' => $discounted_price,
+                ];
+                print json_encode($response);exit;
+            }
+            else{
+                preg_match_all('/\d{2}\/\d{2}\/\d{4}/',$error,$matches);
+                if (DateTime::createFromFormat('d/m/Y', $matches[0][0]) !== FALSE) {
+                	print json_encode('Coupon is expired');exit;
+                }
+                else{
+                     $response = [
+                        'message' => $error,
+                        'discounted_price' => $discounted_price,
+                     ];
+                    print json_encode($response);exit;
+                }
+            }
+        }
+        elseif($isApplying == 'false'){
+           $coupon = commerce_coupon_load_by_code($code);    
+           if ($coupon && $coupon->status) {
+               $hasCouponCode = commerce_coupon_order_has_coupon_code($code, $order);
+               $save = TRUE;
+               if($hasCouponCode){
+                   $removeCoupon = commerce_coupon_remove_coupon_from_order($order, $coupon, $save);
+                   commerce_cart_order_refresh($order);
+                   print 'Coupon has been removed successfully';exit;
+               }
+               else{
+                   print 'Coupon is already removed';exit;
+               }
+           }
+           else{
+               print 'Coupon code is not valid';exit;
+           }
+        }
+        else{
+            print 'Missing parameters: isApplying';exit;
+        }
+    }
+    else{
+        drupal_add_http_header('status', '203 Missing Parameters');
+        if(!$code && !$order){
+             print 'Missing parameters: code, order_id';exit;
+        }
+        elseif(!$code || $order){
+             print 'Missing parameters: code';exit;
+        }
+        else{
+             print 'Missing parameters: order_id';exit;
+        }
+    }
+    
+/*    if($coupon && $coupon->status){
+        if($discounts){
+            foreach($discounts as $discount){
+                var_dump($discount);die;
+                if($discount->status){
+                    $discount_start_dt = $discount->commerce_discount_date['und'][0]['value'];
+                    $discount_end_dt = $discount->commerce_discount_date['und'][0]['value2'];
+                    if($discount_start_dt <= $current_timestamp && $current_timestamp <= $discount_end_dt){
+                        $valid_coupon = [];
+                        print json_encode('Coupon code is valid');exit;
+                    }
+                }
+                else{
+                    print json_encode('Coupon code is not valid');exit;
+                }
+            }
+        }
+        else{
+            print json_encode('Coupon code is not valid');exit;
+        }
+    }
+    else{
+        print json_encode('Coupon code is not valid');exit;
+    }*/
+}
+
+
+function _send_email(){
+    if(isset($_POST)){
+        $subject = $_POST['subject'];
+        $to = $_POST['to'];
+        $language = 'en';
+        $message = drupal_mail('blapi_custom', 'sendmail', $to, $language, $params = array('subject' => $subject), $from = NULL, $send = TRUE);
+        print json_encode($message['result']);exit;
+    }
+    else{
+        print json_encode('Please specify subject and to address');exit;
+    }
+}
+
+function _stock_notification(){
+    module_load_include('module', 'commerce_stock_notifications');
+    $product_id = $_POST['product_id'];
+    $email = $_POST['email'];
+    $context = 'node/'.$_POST['node_id'];
+    if (_commerce_stock_notifications_email_verify($product_id, $email)) {
+        drupal_set_message(t('@duplicate_message', array('@duplicate_message' => $config['duplicate_message'])));
+        print json_encode('Duplicate: Record already exist for getting notification');exit;
+    }
+    else {
+        $record = array (
+          'product_id' => $product_id,
+          'email' => $email,
+          'submit_time' => REQUEST_TIME,
+          'context' => $context,
+        );
+        drupal_write_record('commerce_stock_notifications', $record);
+        drupal_set_message(t('@success_message', array('@success_message' => $config['success_message'])));
+    }
+    print json_encode('Success: Record added. You will get notified when stock available');exit;
+}
+
+function _wishlist(){
+    global $user;
+    $uid = $user->uid;
+    //$uid = 1;
+    $wishlist = commerce_wishlist_order_load($uid);
+    if($wishlist){
+        print json_encode($wishlist);exit;
+    }
+    else{
+        print 'Wishlist empty';exit;
+    }
+}
+
+function add_to_wishlist(){
+    //global $user;
+    $uid = 1;
+    $display_path = '';
+    if(isset($_POST)){
+        $product_id = $_POST['product_id'];
+        $product = commerce_product_load($product_id);
+        if($product){
+            $addedWishlist = commerce_wishlist_product_add($product, NULL, $uid, $display_path);
+            print json_encode($addedWishlist);exit;
+        }
+        else{
+            print json_encode('Product not in stock');exit;
+        }
+    }
+    else{
+        print json_encode('Please specify product_id');exit;
+    }
+}
+
+function remove_wishlist_item(){
+    if(isset($_POST)){
+        $uid = 1;
+        $line_item_id = $_POST['line_item_id'];
+        $line_item = commerce_line_item_load($line_item_id);
+        $account = user_load($uid);
+        commerce_wishlist_product_remove_line_item($line_item, $account);
+        print json_encode('Product removed from wishlist');exit;
+    }
+    else{
+         print json_encode('Please specify product_id');exit;
+    }
+}
+
+// function _generate_invoice(){    
+//     $order_id = $_POST['order_id'];
+//     $order = commerce_order_load($order_id);
+//     $currency = $order->commerce_order_total['und'][0]['currency_code'];
+//     $base_price = $order->commerce_order_total['und'][0]['amount'];
+//     $line_item_id = $order->commerce_line_items['und'][0]['line_item_id'];    
+//     // $line_item = commerce_services_line_item_retrieve($line_item_id);
+//     $tx_id = '123';
+//     $view_mode = 'invoice';
+//     $invoice_format_file = DRUPAL_ROOT."/sites/default/files/INVOICE-Bombay_Living.xlsx";
+
+//     ob_start();
+//     include DRUPAL_ROOT."/sites/default/files/INVOICE-Bombay_Living.php";
+//     $htmlContent = ob_get_contents();
+//     ob_end_clean();
+//     $fp = fopen($invoice_format_file,"r");
+//     $strContent = fread($fp, filesize($invoice_format_file));
+//     fclose($fp);
+//     $xml = new DOMDocument(); 
+//     $xml->loadHTMLFile($invoice_format_file);
+//     $orderId = $xml->getElementById("order-id");
+    
+//     //Get invoice from Commerce Invoice Receipt module
+//     $styles[] = array(
+//         'type' => 'file',
+//         'media' => 'all',
+//         'data' => commerce_invoice_reciept_css_path(),
+//         'group' => CSS_DEFAULT,
+//         'every_page' => FALSE,
+//         'weight' => 0,
+//         'preprocess' => FALSE,
+//         'browsers' => array(),
+//     );
+//     $html = drupal_get_css($styles);
+//     $build = entity_view('commerce_order', array($order->order_id => $order), $view_mode, NULL, TRUE);
+//     $invoice_info = _commerce_invoice_receipt_get_invoice_info($order, $build);
+//     $html .= theme('commerce_order_invoice_view', array('info' => $invoice_info, 'order' => $order));
+//     $invoice = _emogrifier_process($html, NULL, NULL, NULL, NULL, NULL);
+//     //print $strContent;exit;
+//     //Generating Pdf using Dompdf php library
+//     /* $dompdf = new Dompdf();
+//     $dompdf->loadHtml($strContent);
+//     $dompdf->setPaper('A4', 'portrait');
+//     $dompdf->render();
+//     print $dompdf->stream();exit; */
+//     $pdf = new TCPDF();
+//     $pdf->AddPage();
+//     $pdf->writeHTML($htmlContent, true, false, true, false, '');
+//     print $pdf->Output('invoice.pdf', 'I');exit;
+    
+// /*    $excel = new SimpleExcel('html');  
+//     $excel->parser->loadFile($invoice_format_file);   
+//     $fields = $excel->parser->getField();                  // get complete array of the table
+//     $row = $excel->parser->getRow(1);                   // get specific array from the specified row (3rd row)
+//     $column = $excel->parser->getColumn(2);                // get specific array from the specified column (4th row)
+//     $cell = $excel->parser->getCell(3,2);*/
+    
+//     $excel2 = PHPExcel_IOFactory::createReader('Excel2007');
+//     $excel2 = $excel2->load($invoice_format_file); // Empty Sheet
+//     $excel2->setActiveSheetIndex(0);
+//     $excel2->getActiveSheet()->setCellValue('G5', $tx_id)
+//         ->setCellValue('G6', $order_id);
+//     /*$excel2->setActiveSheetIndex(1);
+//     $excel2->getActiveSheet()->setCellValue('A7', '4')
+//         ->setCellValue('C7', '5');*/
+
+//     $objWriter = PHPExcel_IOFactory::createWriter($excel2, 'Excel2007');
+//     header('Content-type: application/vnd.ms-excel');
+//     header('Content-Disposition: attachment; filename="invoice.xlsx"');
+//     $objWriter->save("php://output");
+// }
+
+
+
+/**
+ * @file
+ * Module file for Housing Schemes Services.
+ * Contains the resource declarations for the service APIs
+ * and other commons functions/hooks. if necessary
+ */
+
+/**
+ * Implements hook_services_resources().
+ * Create service resource for APIs to return the necessary json data.
+ */
+function blapi_custom_services_resources() {
+  $resources = array();
+
+//Include the necessary inc files.
+  module_load_include('inc', 'bombayliving', 'include/bombayliving.resources');
+
+//Service Apis for contents.
+  $resources += bombayliving_services_resource();
+
+  return $resources;
+}
+
+/**
+* Implements hook_mail().
+*/
+function blapi_custom_mail($key, &$message, $params) {
+  $langcode = isset($message['language']) ? $message['language']->language : NULL;
+  $options = array(
+    'langcode' => $langcode,
+    'context' => '',
+  );
+  
+  switch ($key) {
+    // Setup an e-mailed invoice.
+    case 'sendmail':  
+      $styles[] = array(
+        'type' => 'file',
+        'media' => 'all',
+        'data' => commerce_invoice_reciept_css_path(),
+        'group' => CSS_DEFAULT,
+        'every_page' => FALSE,
+        'weight' => 0,
+        'preprocess' => FALSE,
+        'browsers' => array(),
+      );
+      $html = drupal_get_css($styles);
+      $message['headers']['Content-Type'] = 'text/html; charset=UTF-8; format=flowed;';
+      $message['subject'] = isset($params['subject']) ? $params['subject'] : t('Subscription Mail', array(), $options);
+      $message['body'][] = _emogrifier_process($html, NULL, NULL, NULL, NULL, NULL);
+    break;
+  }
+}
+
+/* Hooks provided by Drupal core and the System module. */
+/*function blapi_custom_entity_load($entities, $type) {
+  foreach ($entities as $entity) {
+    if(!empty($entity->type) && $entity->type == 'commerce_order') {
+      foreach($entity->commerce_line_items[LANGUAGE_NONE] as $li) {
+        $line_item = commerce_line_item_load($li['line_item_id']);
+        $query = new EntityFieldQuery;
+        $query->entityCondition('entity_type', 'node', '=')
+        ->propertyCondition('type', array('bags_cases', 'drinks'), 'IN')
+        ->fieldCondition('field_product', 'product_id', $line_item->commerce_product[LANGUAGE_NONE][0]['product_id'], '=')
+        ->range(0, 1);
+        $result = $query->execute();
+        if(!empty($result)) {
+          $nid = array_shift($result['node']);
+          $node = node_load($nid->nid);
+          if(!empty($node->field_images[LANGUAGE_NONE][0]['uri'])) {
+            $entity->product_images[] = file_create_url($node->field_images[LANGUAGE_NONE][0]['uri']);
+          }
+        }
+      }
+    }
+  }
+}*/
+
+
+//function _reports(){
+    // module_load_include('module', 'commerce_reports_stock', 'commerce_reports_stock');
+    // $stocks = _commerce_reports_stock_calculate_dataset($sku = NULL, $key = NULL, $reset = FALSE);
+    // $query = db_query("SELECT * FROM {commerce_order} WHERE status IN :status", array(':status' => array('pending','checkout_payment')));
+    // $orders = (object) $query->fetchAll();
+    /*$reports_data = [];
+    
+    $query = db_select('commerce_line_item', 'l');
+    $query->innerjoin('commerce_order', 'o', 'l.order_id = o.order_id');
+    $query->innerjoin('field_data_commerce_product', 'cp', 'cp.entity_id = l.line_item_id');
+    $query->fields('cp', array('commerce_product_product_id'))
+      ->fields('l', array('quantity','line_item_id'))
+      ->fields('o',array('placed','uid','order_id'))
+      ->condition('o.status', array('pending','completed'),'IN');
+    $query->orderBy("o.placed", "ASC");  
+    $result = $query->execute()->fetchAll();
+    
+    $reports_data = getProductsReport($result);
+    
+    $firstOrderDate = $result[0]->placed;
+    $now = time(); // or your date as well
+    $datediff = $now - $firstOrderDate;
+    $total_no_of_days = round($datediff / (60 * 60 * 24));
+    $total_months = $total_no_of_days/30.4 ;
+    
+    //Monthly, yearly, daily, weekly reports
+    $nowDate = date('Y-m-d');
+    $prevWeek = strtotime($nowDate. ' -1 week');
+    $prevMonth = strtotime($nowDate. ' -1 month');
+    $prevYear = strtotime($nowDate. ' -1 year');
+    
+    $year_query = db_select('commerce_line_item', 'l');
+    $year_query->innerjoin('commerce_order', 'o', 'l.order_id = o.order_id');
+    $year_query->innerjoin('field_data_commerce_product', 'cp', 'cp.entity_id = l.line_item_id');
+    $year_query->fields('cp', array('commerce_product_product_id'))
+      ->fields('l', array('quantity','line_item_id'))
+      ->fields('o',array('placed','uid','order_id'))
+      ->condition('o.placed', $prevYear, '>=')
+      ->condition('o.status', array('pending','completed'),'IN');
+    $year_result = $year_query->execute()->fetchAll();
+    
+    $year_report = getProductsReport($year_result);
+    
+    $daily_average_sales = $year_report['total_sales']/365;
+    $daily_average_revenue = $year_report['total_revenue']/365;
+    
+    $weekly_average_sales = round(($daily_average_sales * 7),2) ;
+    $weekly_average_revenue = round(($daily_average_revenue * 7),2);
+    
+    $monthly_average_sales = round(($year_report['total_sales']/12),2) ;
+    $monthly_average_revenue = round(($year_report['total_revenue']/12),2);
+    
+    $averages_report = [
+        'daily_average_sales' => round($daily_average_sales, 2),
+        'daily_average_revenue' => round($daily_average_revenue,2),
+        'weekly_average_sales' => $weekly_average_sales,
+        'weekly_average_revenue' => $weekly_average_revenue,
+        'monthly_average_sales' => $monthly_average_sales,
+        'monthly_average_revenue' => $monthly_average_revenue,
+        'yearly_average_sales' => $year_report['total_sales'],
+        'yearly_average_revenue' => $year_report['total_revenue']
+        ];
+    
+    foreach($reports_data['product_report'] as $key =>  $product){
+        $reports_data['product_report'][$key]['avg_month_sales'] = $year_report['product_report'][$key]['sold']/$total_months;
+        $reports_data['product_report'][$key]['last_12_month_sales'] = $year_report['product_report'][$key]['sold'];
+    }    
+    
+    $reports_data['averages_report'] = $averages_report;
+    
+    //Get all users
+    $users_query = new EntityFieldQuery;
+    $users_query->entityCondition('entity_type', 'user')
+        ->propertyCondition('uid',array(0),'NOT IN');
+    $users_result = $users_query->execute();
+    $total_users = count($users_result['user']);
+    
+    $reports_data['total_users'] = $total_users;*/
+        
+   /* $li = commerce_line_item_load_multiple(array('60','67'));
+    $p = commerce_order_load('45');*/
+    // $sales = views_get_view_result('commerce_reports_sales','page_1');
+    // $products_revenue = views_get_view_result('commerce_reports_products','page');
+    // $products_quantity = views_get_view_result('commerce_reports_products','page_1');
+  //  print json_encode($reports_data);exit;
+ /*   
+    $line_items = db_select('commerce_line_item', 'l');
+    $orders = db_select('commerce_order', 'o');
+    $line_items->join($orders)
+    $records->join('commerce_line_item', 'l', 'l.order_id = o.order_id');
+    $records->fields('l', array('line_item_id'));
+    $records->condition('o.status', array('pending','completed'),'IN');
+    $records->execute();
+    //$records->fetchAll();
+    $data = count($records);    
+    foreach($records as $result){
+        $orders = $result;
+    }    */
+    
+//}
