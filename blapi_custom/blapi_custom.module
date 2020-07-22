@@ -27,7 +27,7 @@ function blapi_custom_menu() {
   //   ),
   //   'type' => MENU_CALLBACK,
   // );
-  
+
   $items['blapi/wishlist'] = array(
     'title' => 'Wishlist',
     'page callback' => '_wishlist',
@@ -36,7 +36,7 @@ function blapi_custom_menu() {
     ),
     'type' => MENU_CALLBACK,
   );
-  
+
   $items['blapi/wishlist/add'] = array(
     'title' => 'Add To Wishlist',
     'page callback' => 'add_to_wishlist',
@@ -45,7 +45,7 @@ function blapi_custom_menu() {
     ),
     'type' => MENU_CALLBACK,
   );
-  
+
   $items['blapi/wishlist/remove'] = array(
     'title' => 'Remove Wishlist Item',
     'page callback' => 'remove_wishlist_item',
@@ -54,7 +54,7 @@ function blapi_custom_menu() {
     ),
     'type' => MENU_CALLBACK,
   );
-  
+
   $items['blapi/notify'] = array(
     'title' => 'Send Stock Notifications',
     'page callback' => '_stock_notification',
@@ -82,7 +82,7 @@ function blapi_custom_menu() {
     ),
     'type' => MENU_CALLBACK,
   );
-  
+
   $items['blapi/user-newsletter/%'] = array(
     'title' => 'User Newsletter Subscription',
     'page callback' => 'user_subscribe_newsletter',
@@ -92,7 +92,7 @@ function blapi_custom_menu() {
     ),
     'type' => MENU_CALLBACK,
   );
-  
+
   $items['blapi/nl-subscription-status/%'] = array(
     'title' => 'User Newsletter Subscription Status',
     'page callback' => 'user_newsletter_subscription_status',
@@ -102,7 +102,7 @@ function blapi_custom_menu() {
     ),
     'type' => MENU_CALLBACK,
   );
-  
+
   $items['blapi/reports'] = array(
     'title' => 'Reports',
     'page callback' => '_reports',
@@ -111,7 +111,7 @@ function blapi_custom_menu() {
     ),
     'type' => MENU_CALLBACK,
   );
-  
+
   $items['blapi/get-pincodes'] = array(
     'title' => 'All Pincodes of India',
     'page callback' => 'get_pincodes',
@@ -126,54 +126,15 @@ function blapi_custom_menu() {
 
 function get_pincodes(){
     $params = drupal_get_query_parameters();
-    $isBlackList = $params['isBlackList'];
-    $pincode = filter_xss($params['pincode']);
-    $query = db_query("SELECT pincode FROM {pincodes} WHERE city_name=:city", array(':city' => 'Mumbai'));
-    $pincodes = $query->fetchAllKeyed(0,0);
-    if(!empty($pincode) && in_array($pincode, $pincodes)) {
-      print json_encode(array(true));exit;
+    $pincode = (!empty($params['pincode'])) ? filter_xss($params['pincode']) : '';
+    if(!empty($pincode)) {
+      $query = db_query("SELECT pincode FROM {pincodes} WHERE city_name=:city", array(':city' => 'Mumbai'));
+      $pincodes = $query->fetchAllKeyed(0,0);
+      if(!empty($pincode) && in_array($pincode, $pincodes)) {
+        print json_encode(array(true));exit;
+      }
     }
     print json_encode(array(false));exit;
-
-    // if($isBlackList == 'true'){
-    //     if($pincode){
-    //         $blacklist = db_update('pincodes')
-    //             ->fields(array('status' => 'blacklist'))
-    //             ->condition('pincode', $pincode)
-    //             ->execute();
-    //         if($blacklist){
-    //             print 'Pincode has been blacklisted';exit;
-    //         }
-    //         else{
-    //             print 'Pincode already blacklisted';exit;
-    //         }
-    //     }
-    //     else{
-    //         print 'Missing parameters: pincode needed';exit;
-    //     }
-    // }
-    // elseif($isBlackList == 'false'){
-    //     if($pincode){
-    //         $whitelist = db_update('pincodes')
-    //             ->fields(array('status' => 'whitelist'))
-    //             ->condition('pincode', $pincode)
-    //             ->execute();
-    //         if($whitelist){
-    //             print 'Pincode has been whitelisted';exit;
-    //         }
-    //         else{
-    //             print 'Pincode already whitelisted';exit;
-    //         }
-    //     }
-    //     else{
-    //         print 'Missing parameters: pincode needed';exit;
-    //     }
-    // }
-    // else{
-    //   $query = db_query("SELECT * FROM {pincodes} WHERE status= :status", array(':status' => 'whitelist'));
-    //   $pincodes = (object) $query->fetchAll();
-    //   print json_encode($pincodes);exit;
-    // }
 }
 
 function _reports(){
@@ -192,22 +153,22 @@ function _reports(){
       ->condition('o.status', array('pending','completed'),'IN');
     $query->orderBy("o.placed", "ASC");
     $result = $query->execute()->fetchAll();
-    
+
     $reports_data = getProductsReport($result);
-    
+
     $firstOrderDate = $result[0]->placed;
     $now = time(); // or your date as well
     $datediff = $now - $firstOrderDate;
     $total_no_of_days = round($datediff / (60 * 60 * 24));
     $total_months = $total_no_of_days/30.4 ;
-    
+
     //Monthly, yearly, daily, weekly reports
     $nowDate = date('Y-m-d');
     $curr_date = strtotime($nowDate);
     /*$prevWeek = strtotime($nowDate. ' -1 week');
     $prevMonth = strtotime($nowDate. ' -1 month');*/
     $prevYear = strtotime($nowDate. ' -1 year');
-    
+
     //Weeks of current financial year.
     $noOfWeeks = date( 'W', strtotime( date('Y-m-d') ) ) - date( 'W', strtotime( date('Y-04-01') ) );
 
@@ -493,7 +454,7 @@ function getProductsReport($result){
             $product = commerce_product_load($product_id);
             $total_no_of_products += intval($quantity);
             $total_revenue += intval($amount);
-            
+
             /*$node_query = db_select('node', 'n');
             $node_query->innerjoin('field_data_field_product', 'fp', 'n.nid = fp.entity_id');
             $node_query->fields('n', array('nid'))
@@ -501,9 +462,9 @@ function getProductsReport($result){
             $node_result = $node_query->execute()->fetchAll();*/
 
             $node_query = new EntityFieldQuery();
-            $node_query->entityCondition('entity_type', 'node');  
+            $node_query->entityCondition('entity_type', 'node');
             $node_query->fieldCondition('field_product', 'product_id', $product_id, "=");
-            $node_result = $node_query->execute();  
+            $node_result = $node_query->execute();
             $nid = key($node_result['node']);
             $node = entity_load('node',array($nid));
             $tag_id = $node[$nid]->field_tag['und'][0]['tid'];
@@ -512,7 +473,7 @@ function getProductsReport($result){
             $col = entity_load('taxonomy_term',array($col_id));
             $cat_name = $tag[$tag_id]->name;
             $col_name = $col[$col_id]->name;
-            
+
             $products[$product_id] = [
                 'product_name' => $product->title,
                 'order_placed_date' => date('Y-m-d',$line_item->placed),
@@ -523,14 +484,14 @@ function getProductsReport($result){
                 ];
         }
     }
-    
+
     $reports_data = [
         'total_orders' => count($total_orders),
         'total_sales' => $total_no_of_products,
         'total_revenue' => $total_revenue,
         'product_report' => $products,
         ];
-        
+
     return $reports_data;
 }
 
@@ -538,7 +499,7 @@ function user_newsletter_subscription_status(){
     $path_args = arg();
     $uid = $path_args[2];
     $subscriber_array = newsletter_subscriber_load(array(), array('uid' => $uid));
-    
+
     if($subscriber_array){
         print 'User is subscribed';exit;
     }
@@ -767,125 +728,150 @@ function _stock_notification(){
 }
 
 function _wishlist(){
-    global $user;
-    $uid = $user->uid;
-    //$uid = 1;
-    $wishlist = commerce_wishlist_order_load($uid);
-    if($wishlist){
-        print json_encode($wishlist);exit;
+  $wishlist_data = array();
+  // If no token is sent, load anonymous.
+  if (!isset($_SERVER['HTTP_X_USER_SESSION_TOKEN'])) {
+    $user = drupal_anonymous_user();
+    $user->timestamp = time();
+    session_id(drupal_random_key());
+    print json_encode(array('error' => array('code' => 404, 'message' => 'Access denied for anonymous user.')));
+    exit;
+  }
+  // Else, if session is sent, load user.
+  elseif(isset($_SERVER['HTTP_X_USER_SESSION_TOKEN']) && !empty($_SERVER['HTTP_X_USER_SESSION_TOKEN'])) {
+    // Inspired by session.inc _drupal_session_read() function.
+    $sid = $_SERVER['HTTP_X_USER_SESSION_TOKEN'];
+
+    // Otherwise, if the session is still active, we have a record of the
+    // client's session in the database. If it's HTTPS then we are either have
+    // a HTTPS session or we are about to log in so we check the sessions table
+    // for an anonymous session with the non-HTTPS-only cookie.
+    global $is_https;
+    if ($is_https) {
+      $user = db_query("SELECT u.*, s.* FROM {users} u INNER JOIN {sessions} s ON u.uid = s.uid WHERE s.ssid = :ssid", array(':ssid' => $sid))->fetchObject();
     }
-    else{
-        print 'Wishlist empty';exit;
+    else {
+      $user = db_query("SELECT u.*, s.* FROM {users} u INNER JOIN {sessions} s ON u.uid = s.uid WHERE s.sid = :sid", array(':sid' => $sid))->fetchObject();
     }
+
+    // We found the client's session record and they are an authenticated,
+    // active user.
+    if ($user && $user->uid > 0 && $user->status == 1) {
+      $wishlist = commerce_wishlist_order_load($user->uid);
+      if(!empty($wishlist)) {
+        foreach($wishlist->commerce_line_items['und'] as $line_item) {
+          $wishlist_data[] = commerce_line_item_load($line_item['line_item_id']);
+        }
+      }
+      print json_encode($wishlist_data);exit;
+    }
+  }
 }
 
 function add_to_wishlist(){
-    //global $user;
-    $uid = 1;
-    $display_path = '';
-    if(isset($_POST)){
-        $product_id = $_POST['product_id'];
+  // If no token is sent, load anonymous.
+  if (!isset($_SERVER['HTTP_X_USER_SESSION_TOKEN'])) {
+    $user = drupal_anonymous_user();
+    $user->timestamp = time();
+    session_id(drupal_random_key());
+    print json_encode(array('error' => array('code' => 404, 'message' => 'Access denied for anonymous user.')));
+    exit;
+  }
+  // Else, if session is sent, load user.
+  elseif(isset($_SERVER['HTTP_X_USER_SESSION_TOKEN']) && !empty($_SERVER['HTTP_X_USER_SESSION_TOKEN'])) {
+    // Inspired by session.inc _drupal_session_read() function.
+    $sid = $_SERVER['HTTP_X_USER_SESSION_TOKEN'];
+
+    // Otherwise, if the session is still active, we have a record of the
+    // client's session in the database. If it's HTTPS then we are either have
+    // a HTTPS session or we are about to log in so we check the sessions table
+    // for an anonymous session with the non-HTTPS-only cookie.
+    global $is_https;
+    if ($is_https) {
+      $user = db_query("SELECT u.*, s.* FROM {users} u INNER JOIN {sessions} s ON u.uid = s.uid WHERE s.ssid = :ssid", array(':ssid' => $sid))->fetchObject();
+    }
+    else {
+      $user = db_query("SELECT u.*, s.* FROM {users} u INNER JOIN {sessions} s ON u.uid = s.uid WHERE s.sid = :sid", array(':sid' => $sid))->fetchObject();
+    }
+
+    // We found the client's session record and they are an authenticated,
+    // active user.
+    if ($user && $user->uid > 0 && $user->status == 1) {
+      if(!empty($_POST['product_id'])) {
+        $display_path = '';
+        $product_id = filter_xss($_POST['product_id']);
         $product = commerce_product_load($product_id);
-        if($product){
-            $addedWishlist = commerce_wishlist_product_add($product, NULL, $uid, $display_path);
-            print json_encode($addedWishlist);exit;
+        if($product) {
+            $addedWishlist = commerce_wishlist_product_add($product, NULL, $user->uid, $display_path);
+            if(!$addedWishlist) {
+              print json_encode(array('error' => array('code' => 404, 'message' => 'Product already in wishlist')));exit;
+            }
+            print json_encode(array('success' => array('code' => 200, 'message' => 'Product added to wishlist')));exit;
         }
         else{
-            print json_encode('Product not in stock');exit;
+          print json_encode(array('error' => array('code' => 404, 'message' => 'Product not in stock')));exit;
         }
+      }
+      else {
+        print json_encode(array('error' => array('code' => 404, 'message' => 'Please specify product_id')));exit;
+      }
     }
     else{
-        print json_encode('Please specify product_id');exit;
+      print json_encode(array('error' => array('code' => 404, 'message' => 'Access denied for anonymous user.')));exit;
     }
+  }
 }
 
 function remove_wishlist_item(){
-    if(isset($_POST)){
-        $uid = 1;
-        $line_item_id = $_POST['line_item_id'];
-        $line_item = commerce_line_item_load($line_item_id);
-        $account = user_load($uid);
-        commerce_wishlist_product_remove_line_item($line_item, $account);
-        print json_encode('Product removed from wishlist');exit;
+  // If no token is sent, load anonymous.
+  if (!isset($_SERVER['HTTP_X_USER_SESSION_TOKEN'])) {
+    $user = drupal_anonymous_user();
+    $user->timestamp = time();
+    session_id(drupal_random_key());
+    print json_encode(array('error' => array('code' => 404, 'message' => 'Access denied for anonymous user.')));
+    exit;
+  }
+  // Else, if session is sent, load user.
+  elseif(isset($_SERVER['HTTP_X_USER_SESSION_TOKEN']) && !empty($_SERVER['HTTP_X_USER_SESSION_TOKEN'])) {
+    // Inspired by session.inc _drupal_session_read() function.
+    $sid = $_SERVER['HTTP_X_USER_SESSION_TOKEN'];
+
+    // Otherwise, if the session is still active, we have a record of the
+    // client's session in the database. If it's HTTPS then we are either have
+    // a HTTPS session or we are about to log in so we check the sessions table
+    // for an anonymous session with the non-HTTPS-only cookie.
+    global $is_https;
+    if ($is_https) {
+      $user = db_query("SELECT u.*, s.* FROM {users} u INNER JOIN {sessions} s ON u.uid = s.uid WHERE s.ssid = :ssid", array(':ssid' => $sid))->fetchObject();
+    }
+    else {
+      $user = db_query("SELECT u.*, s.* FROM {users} u INNER JOIN {sessions} s ON u.uid = s.uid WHERE s.sid = :sid", array(':sid' => $sid))->fetchObject();
+    }
+
+    // We found the client's session record and they are an authenticated,
+    // active user.
+    if ($user && $user->uid > 0 && $user->status == 1) {
+      if(!empty($_POST['line_item_id'])) {
+        $product_id = filter_xss($_POST['line_item_id']);
+        $line_item = commerce_line_item_load($product_id);
+        if(!empty($line_item)) {
+          $account = user_load($user->uid);
+          $result = commerce_wishlist_product_remove_line_item($line_item, $account);
+          print json_encode(array('success' => array('code' => 200, 'message' => 'Product removed from wishlist')));exit;
+        }
+        else {
+          print json_encode(array('error' => array('code' => 404, 'message' => 'Not able to find specified product in your wishlist')));exit;
+        }
+      }
+      else {
+        print json_encode(array('error' => array('code' => 404, 'message' => 'Please specify line_item_id')));exit;
+      }
     }
     else{
-         print json_encode('Please specify product_id');exit;
+      print json_encode(array('error' => array('code' => 404, 'message' => 'Access denied for anonymous user.')));exit;
     }
+  }
 }
-
-// function _generate_invoice(){    
-//     $order_id = $_POST['order_id'];
-//     $order = commerce_order_load($order_id);
-//     $currency = $order->commerce_order_total['und'][0]['currency_code'];
-//     $base_price = $order->commerce_order_total['und'][0]['amount'];
-//     $line_item_id = $order->commerce_line_items['und'][0]['line_item_id'];    
-//     // $line_item = commerce_services_line_item_retrieve($line_item_id);
-//     $tx_id = '123';
-//     $view_mode = 'invoice';
-//     $invoice_format_file = DRUPAL_ROOT."/sites/default/files/INVOICE-Bombay_Living.xlsx";
-
-//     ob_start();
-//     include DRUPAL_ROOT."/sites/default/files/INVOICE-Bombay_Living.php";
-//     $htmlContent = ob_get_contents();
-//     ob_end_clean();
-//     $fp = fopen($invoice_format_file,"r");
-//     $strContent = fread($fp, filesize($invoice_format_file));
-//     fclose($fp);
-//     $xml = new DOMDocument(); 
-//     $xml->loadHTMLFile($invoice_format_file);
-//     $orderId = $xml->getElementById("order-id");
-    
-//     //Get invoice from Commerce Invoice Receipt module
-//     $styles[] = array(
-//         'type' => 'file',
-//         'media' => 'all',
-//         'data' => commerce_invoice_reciept_css_path(),
-//         'group' => CSS_DEFAULT,
-//         'every_page' => FALSE,
-//         'weight' => 0,
-//         'preprocess' => FALSE,
-//         'browsers' => array(),
-//     );
-//     $html = drupal_get_css($styles);
-//     $build = entity_view('commerce_order', array($order->order_id => $order), $view_mode, NULL, TRUE);
-//     $invoice_info = _commerce_invoice_receipt_get_invoice_info($order, $build);
-//     $html .= theme('commerce_order_invoice_view', array('info' => $invoice_info, 'order' => $order));
-//     $invoice = _emogrifier_process($html, NULL, NULL, NULL, NULL, NULL);
-//     //print $strContent;exit;
-//     //Generating Pdf using Dompdf php library
-//     /* $dompdf = new Dompdf();
-//     $dompdf->loadHtml($strContent);
-//     $dompdf->setPaper('A4', 'portrait');
-//     $dompdf->render();
-//     print $dompdf->stream();exit; */
-//     $pdf = new TCPDF();
-//     $pdf->AddPage();
-//     $pdf->writeHTML($htmlContent, true, false, true, false, '');
-//     print $pdf->Output('invoice.pdf', 'I');exit;
-    
-// /*    $excel = new SimpleExcel('html');  
-//     $excel->parser->loadFile($invoice_format_file);   
-//     $fields = $excel->parser->getField();                  // get complete array of the table
-//     $row = $excel->parser->getRow(1);                   // get specific array from the specified row (3rd row)
-//     $column = $excel->parser->getColumn(2);                // get specific array from the specified column (4th row)
-//     $cell = $excel->parser->getCell(3,2);*/
-    
-//     $excel2 = PHPExcel_IOFactory::createReader('Excel2007');
-//     $excel2 = $excel2->load($invoice_format_file); // Empty Sheet
-//     $excel2->setActiveSheetIndex(0);
-//     $excel2->getActiveSheet()->setCellValue('G5', $tx_id)
-//         ->setCellValue('G6', $order_id);
-//     /*$excel2->setActiveSheetIndex(1);
-//     $excel2->getActiveSheet()->setCellValue('A7', '4')
-//         ->setCellValue('C7', '5');*/
-
-//     $objWriter = PHPExcel_IOFactory::createWriter($excel2, 'Excel2007');
-//     header('Content-type: application/vnd.ms-excel');
-//     header('Content-Disposition: attachment; filename="invoice.xlsx"');
-//     $objWriter->save("php://output");
-// }
-
-
 
 /**
  * @file
@@ -940,31 +926,6 @@ function blapi_custom_mail($key, &$message, $params) {
     break;
   }
 }
-
-/* Hooks provided by Drupal core and the System module. */
-/*function blapi_custom_entity_load($entities, $type) {
-  foreach ($entities as $entity) {
-    if(!empty($entity->type) && $entity->type == 'commerce_order') {
-      foreach($entity->commerce_line_items[LANGUAGE_NONE] as $li) {
-        $line_item = commerce_line_item_load($li['line_item_id']);
-        $query = new EntityFieldQuery;
-        $query->entityCondition('entity_type', 'node', '=')
-        ->propertyCondition('type', array('bags_cases', 'drinks'), 'IN')
-        ->fieldCondition('field_product', 'product_id', $line_item->commerce_product[LANGUAGE_NONE][0]['product_id'], '=')
-        ->range(0, 1);
-        $result = $query->execute();
-        if(!empty($result)) {
-          $nid = array_shift($result['node']);
-          $node = node_load($nid->nid);
-          if(!empty($node->field_images[LANGUAGE_NONE][0]['uri'])) {
-            $entity->product_images[] = file_create_url($node->field_images[LANGUAGE_NONE][0]['uri']);
-          }
-        }
-      }
-    }
-  }
-}*/
-
 
 //function _reports(){
     // module_load_include('module', 'commerce_reports_stock', 'commerce_reports_stock');

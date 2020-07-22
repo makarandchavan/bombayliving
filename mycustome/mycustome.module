@@ -1,6 +1,6 @@
 <?php
 //include_once "userregcustome.form.inc";
-require_once $_SERVER["DOCUMENT_ROOT"] . '/api/sites/all/modules/custom/mycustome/vendor/autoload.php';
+require_once 'vendor/autoload.php';
 
 function mycustome_menu()
 {
@@ -764,7 +764,7 @@ function facebook_urlcallback_fun()
 function mycustome_form_alter(&$form, &$form_state, $form_id)
 {
     global $user,$base_url;
-             $dbase_prefix = $GLOBALS['databases']['default']['default']['prefix'];
+   $dbase_prefix = !empty($GLOBALS['databases']['default']['default']['prefix']) ? $GLOBALS['databases']['default']['default']['prefix'] : '';
   // echo '<br> user form id '.$form_id;
     
    // if($form_id=="user_register_form"||$form_id=="user_profile_form")

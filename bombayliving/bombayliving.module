@@ -10,8 +10,11 @@ use Dompdf\Options;
 function bombayliving_init() {
   $paths = explode("/", current_path());
   if (count($paths) > 3 && $paths[0] == 'user' && $paths[2] == 'orders' && $paths[4] == 'print') {
+    // Disable caching.
     drupal_page_is_cacheable(FALSE);
   }
+  header("Cache-Control: no-cache, must-revalidate"); // HTTP/1.1
+  header("Expires: Sat, 26 Jul 1997 05:00:00 GMT");
 }
 
 /**
@@ -224,7 +227,7 @@ function bombayliving_menu() {
     ),
     'type' => MENU_CALLBACK,
   );
-  
+
   
   $items['blapi/contact'] = array(
     'title' => 'Contact',
@@ -406,7 +409,7 @@ function _download_invoice($uid = NULL, $oid = NULL) {
   $options = new Options();
   $options->set('isRemoteEnabled', TRUE);
   $options->set('isHtml5ParserEnabled', true);
-  // Instantiate and use the dompdf class 
+  // Instantiate and use the dompdf class
   $dompdf = new Dompdf($options);
   $contxt = stream_context_create([ 
     'ssl' => [ 
@@ -712,7 +715,7 @@ function _homepage_json_output() {
   }
   if(empty($output)) {
     $output = array('homepage' => array());
-    
+
     // Get top slider data.
     $main_slider = node_load_multiple(array(), array('type' => 'slideshow', 'status' => 1));
     $main_slider = array_shift($main_slider);
@@ -726,7 +729,7 @@ function _homepage_json_output() {
           'title' => $slide->field_link[LANGUAGE_NONE][0]['title'],
           'url' => $slide->field_link[LANGUAGE_NONE][0]['url'],
         ),
-      ); 
+      );
     }
 
     // Get top tagline data.
@@ -746,7 +749,7 @@ function _homepage_json_output() {
           'title' => $slide->field_link[LANGUAGE_NONE][0]['title'],
           'url' => $slide->field_link[LANGUAGE_NONE][0]['url'],
         ),
-      ); 
+      );
     }
     foreach($grid_data->field_small_square_first_data[LANGUAGE_NONE] as $small_square_1) {
       $slide = field_collection_item_load($small_square_1['value'], $reset = FALSE);
@@ -757,7 +760,7 @@ function _homepage_json_output() {
           'title' => $slide->field_link[LANGUAGE_NONE][0]['title'],
           'url' => $slide->field_link[LANGUAGE_NONE][0]['url'],
         ),
-      ); 
+      );
     }
     foreach($grid_data->field_small_square_second_data[LANGUAGE_NONE] as $small_square_2) {
       $slide = field_collection_item_load($small_square_2['value'], $reset = FALSE);
@@ -768,7 +771,7 @@ function _homepage_json_output() {
           'title' => $slide->field_link[LANGUAGE_NONE][0]['title'],
           'url' => $slide->field_link[LANGUAGE_NONE][0]['url'],
         ),
-      ); 
+      );
     }
     foreach($grid_data->field_rectangle_data[LANGUAGE_NONE] as $rectangle) {
       $slide = field_collection_item_load($rectangle['value'], $reset = FALSE);
@@ -779,7 +782,7 @@ function _homepage_json_output() {
           'title' => $slide->field_link[LANGUAGE_NONE][0]['title'],
           'url' => $slide->field_link[LANGUAGE_NONE][0]['url'],
         ),
-      ); 
+      );
     }
 
     // Get architects data.
@@ -1521,14 +1524,14 @@ function _get_architects() {
     $architects = $query->execute();
     foreach($architects['node'] as $architect) {
       $data = node_load($architect->nid);
-      if(!empty($data->field_projects[LANGUAGE_NONE])) {
+      //if(!empty($data->field_projects[LANGUAGE_NONE])) {
         $output[] = array(
           'title' => $data->title_field[LANGUAGE_NONE][0]['value'],
           'tagline' => $data->field_headline[LANGUAGE_NONE][0]['value'],
           'image' => file_create_url($data->field_single_image[LANGUAGE_NONE][0]['uri']),
           'id' => $architect->nid,
         );
-      }
+      //}
     }
     cache_set('architects_blapi', $output, 'cache', strtotime('+1 month')); //1 day.
   }
@@ -1594,6 +1597,8 @@ function _get_gallery_by_id($nid = NULL, $id = NULL) {
 function _bombayliving_register_user() {
   // Disable caching.
   drupal_page_is_cacheable(FALSE);
+  header("Cache-Control: no-cache, must-revalidate"); // HTTP/1.1
+  header("Expires: Sat, 26 Jul 1997 05:00:00 GMT");
 
   $file_content = file_get_contents('php://input');
   $contents = json_decode($file_content, TRUE);
@@ -1657,7 +1662,7 @@ function _bombayliving_register_user() {
       $new_user['field_add1']['und'][$k]['administrative_area'] = filter_xss($add[3]);
       $new_user['field_add1']['und'][$k]['postal_code'] = filter_xss($add[4]);
     }
-    
+
     $account = user_save(NULL, $new_user);
     print json_encode($account);
     exit;
@@ -1735,16 +1740,31 @@ function bombayliving_entity_load($entities, $type) {
         }
       }
     }
+    if(!empty($entity->line_item_id) && !empty($entity->order_id)) {
+      if(!empty($entity->field_selected_swatch['und'][0]['value'])) {
+        $swatch_name = taxonomy_term_load($entity->field_selected_swatch['und'][0]['value']);
+        $entity->field_selected_swatch_name = $swatch_name->name;
+      }
+    }
+    if(!empty($entity->uid) && !empty($entity->pass)) {
+      $current_cart = commerce_cart_order_load($entity->uid);
+      $entity->cartid = !empty($current_cart->order_id) ? $current_cart->order_id : 0;
+    }
   }
 }
 
 function _update_user() {
+  // Disable caching.
+  drupal_page_is_cacheable(FALSE);
+  header("Cache-Control: no-cache, must-revalidate"); // HTTP/1.1
+  header("Expires: Sat, 26 Jul 1997 05:00:00 GMT");
+
   require_once DRUPAL_ROOT . '/' . variable_get('password_inc', 'includes/password.inc');
   // Takes raw data from the request
   $json = file_get_contents('php://input');
   // Converts it into a PHP object
   $data = json_decode($json);
-  
+
   // If no token is sent, load anonymous.
   if (!isset($_SERVER['HTTP_X_USER_SESSION_TOKEN'])) {
     $user = drupal_anonymous_user();
@@ -1792,14 +1812,14 @@ function _update_user() {
         }
       }
       if(!empty($data->add2)) {
-        unset($existingUser->field_add2['und']);
+        unset($existingUser->field_add_2['und']);
         foreach($data->add2 as $key => $add) {
-          $existingUser->field_add2['und'][$key]['country'] = $add->country;
-          $existingUser->field_add2['und'][$key]['thoroughfare'] = $add->thoroughfare;
-          $existingUser->field_add2['und'][$key]['premise'] = $add->premise;
-          $existingUser->field_add2['und'][$key]['locality'] = $add->locality;
-          $existingUser->field_add2['und'][$key]['administrative_area'] = $add->administrative_area;
-          $existingUser->field_add2['und'][$key]['postal_code'] = $add->postal_code;
+          $existingUser->field_add_2['und'][$key]['country'] = $add->country;
+          $existingUser->field_add_2['und'][$key]['thoroughfare'] = $add->thoroughfare;
+          $existingUser->field_add_2['und'][$key]['premise'] = $add->premise;
+          $existingUser->field_add_2['und'][$key]['locality'] = $add->locality;
+          $existingUser->field_add_2['und'][$key]['administrative_area'] = $add->administrative_area;
+          $existingUser->field_add_2['und'][$key]['postal_code'] = $add->postal_code;
         }
       }
       if(!empty($data->number)) {
@@ -1809,7 +1829,10 @@ function _update_user() {
         $existingUser->pass = user_hash_password($data->pass);
       }
       $status = user_save($existingUser);
-      echo json_encode(array($status));exit;
+      print json_encode(array($status));exit;
+    }
+    else {
+      print json_encode(array('error' => array('code' => 404, 'message' => 'Invalid user.')));exit;
     }
   }
 }
@@ -1825,7 +1848,7 @@ function bombayliving_cron() {
     if($days > 1) {
       //change the status of the order to in_making.
       //load each order as an entity.
-      $order_wrapper = entity_metadata_wrapper('commerce_order', $order);  
+      $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
       $order_wrapper->status = 'in_making';
       $order_wrapper->save();
     }
@@ -1841,7 +1864,7 @@ function bombayliving_cron() {
     if($days > 39) {
       //change the status of the order to in_making.
       //load each order as an entity.
-      $order_wrapper = entity_metadata_wrapper('commerce_order', $order);  
+      $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
       $order_wrapper->status = 'shipped';
       $order_wrapper->save();
     }
@@ -1857,9 +1880,21 @@ function bombayliving_cron() {
     if($days > 7) {
       //change the status of the order to in_making.
       //load each order as an entity.
-      $order_wrapper = entity_metadata_wrapper('commerce_order', $order);  
+      $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
       $order_wrapper->status = 'delivered';
       $order_wrapper->save();
     }
+  }
+}
+
+function bombayliving_user_login(&$edit, $account) {
+  // If the user has a NULL time zone, notify them to set a time zone.
+  if (!$account->timezone && variable_get('configurable_timezones', 1) && variable_get('empty_timezone_message', 0)) {
+    drupal_set_message(t('Configure your <a href="@user-edit">account time zone setting</a>.', array(
+      '@user-edit' => url("user/{$account->uid}/edit", array(
+        'query' => drupal_get_destination(),
+        'fragment' => 'edit-timezone',
+      )),
+    )));
   }
 }
