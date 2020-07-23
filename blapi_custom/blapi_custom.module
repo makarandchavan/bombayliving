@@ -734,7 +734,7 @@ function _wishlist(){
     $user = drupal_anonymous_user();
     $user->timestamp = time();
     session_id(drupal_random_key());
-    print json_encode(array('error' => array('code' => 404, 'message' => 'Access denied for anonymous user.')));
+    print json_encode(array('error' => array('code' => 401, 'message' => 'Access denied for anonymous user.')));
     exit;
   }
   // Else, if session is sent, load user.
@@ -774,7 +774,7 @@ function add_to_wishlist(){
     $user = drupal_anonymous_user();
     $user->timestamp = time();
     session_id(drupal_random_key());
-    print json_encode(array('error' => array('code' => 404, 'message' => 'Access denied for anonymous user.')));
+    print json_encode(array('error' => array('code' => 401, 'message' => 'Access denied for anonymous user.')));
     exit;
   }
   // Else, if session is sent, load user.
@@ -804,20 +804,20 @@ function add_to_wishlist(){
         if($product) {
             $addedWishlist = commerce_wishlist_product_add($product, NULL, $user->uid, $display_path);
             if(!$addedWishlist) {
-              print json_encode(array('error' => array('code' => 404, 'message' => 'Product already in wishlist')));exit;
+              print json_encode(array('error' => array('code' => 401, 'message' => 'Product already in wishlist')));exit;
             }
-            print json_encode(array('success' => array('code' => 200, 'message' => 'Product added to wishlist')));exit;
+            print json_encode(array(true));exit;
         }
         else{
-          print json_encode(array('error' => array('code' => 404, 'message' => 'Product not in stock')));exit;
+          print json_encode(array('error' => array('code' => 401, 'message' => 'Product not in stock')));exit;
         }
       }
       else {
-        print json_encode(array('error' => array('code' => 404, 'message' => 'Please specify product_id')));exit;
+        print json_encode(array('error' => array('code' => 401, 'message' => 'Please specify product_id')));exit;
       }
     }
     else{
-      print json_encode(array('error' => array('code' => 404, 'message' => 'Access denied for anonymous user.')));exit;
+      print json_encode(array('error' => array('code' => 401, 'message' => 'Access denied for anonymous user.')));exit;
     }
   }
 }
@@ -828,7 +828,7 @@ function remove_wishlist_item(){
     $user = drupal_anonymous_user();
     $user->timestamp = time();
     session_id(drupal_random_key());
-    print json_encode(array('error' => array('code' => 404, 'message' => 'Access denied for anonymous user.')));
+    print json_encode(array('error' => array('code' => 401, 'message' => 'Access denied for anonymous user.')));
     exit;
   }
   // Else, if session is sent, load user.
@@ -856,19 +856,19 @@ function remove_wishlist_item(){
         $line_item = commerce_line_item_load($product_id);
         if(!empty($line_item)) {
           $account = user_load($user->uid);
-          $result = commerce_wishlist_product_remove_line_item($line_item, $account);
-          print json_encode(array('success' => array('code' => 200, 'message' => 'Product removed from wishlist')));exit;
+          commerce_wishlist_product_remove_line_item($line_item, $account);
+          print json_encode(array(true));exit;
         }
         else {
-          print json_encode(array('error' => array('code' => 404, 'message' => 'Not able to find specified product in your wishlist')));exit;
+          print json_encode(array('error' => array('code' => 401, 'message' => 'Not able to find specified product in your wishlist')));exit;
         }
       }
       else {
-        print json_encode(array('error' => array('code' => 404, 'message' => 'Please specify line_item_id')));exit;
+        print json_encode(array('error' => array('code' => 401, 'message' => 'Please specify line_item_id')));exit;
       }
     }
     else{
-      print json_encode(array('error' => array('code' => 404, 'message' => 'Access denied for anonymous user.')));exit;
+      print json_encode(array('error' => array('code' => 401, 'message' => 'Access denied for anonymous user.')));exit;
     }
   }
 }
