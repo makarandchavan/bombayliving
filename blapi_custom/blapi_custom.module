@@ -121,7 +121,24 @@ function blapi_custom_menu() {
     'type' => MENU_CALLBACK,
   );
 
+  $items['blapi/validate-gstin'] = array(
+    'title' => 'Validate GSTIN in India',
+    'page callback' => 'is_valid_gstin',
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+
   return $items;
+}
+
+// GSTIN API.
+function is_valid_gstin($gstin) {
+  $params = drupal_get_query_parameters();
+  $gstin = (!empty($params['gstin'])) ? filter_xss($params['gstin']) : '';
+  $regex = "/^([0][1-9]|[1-2][0-9]|[3][0-5])([a-zA-Z]{5}[0-9]{4}[a-zA-Z]{1}[1-9a-zA-Z]{1}[zZ]{1}[0-9a-zA-Z]{1})+$/";
+  echo json_encode(preg_match($regex, $gstin));exit;
 }
 
 function get_pincodes(){

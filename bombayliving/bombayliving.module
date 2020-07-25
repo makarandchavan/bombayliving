@@ -1673,31 +1673,6 @@ function _bombayliving_register_user() {
   }
 }
 
-
-/**
- * @file
- * Module file for Housing Schemes Services.
- * Contains the resource declarations for the service APIs
- * and other commons functions/hooks. if necessary
- */
-
-/**
- * Implements hook_services_resources().
- * Create service resource for APIs to return the necessary json data.
- */
-function bombayliving_services_resources() {
-  $resources = array();
-
-//Include the necessary inc files.
-  module_load_include('inc', 'bombayliving', 'include/bombayliving.resources');
-
-//Service Apis for contents.
-  $resources += bombayliving_services_resource();
-
-  return $resources;
-}
-
-
 /* Hooks provided by Drupal core and the System module. */
 function bombayliving_entity_load($entities, $type) {
   foreach ($entities as $entity) {
@@ -1712,15 +1687,15 @@ function bombayliving_entity_load($entities, $type) {
           if(!empty($line_item->commerce_product[LANGUAGE_NONE][0]['product_id'])) {
             $variant = commerce_product_load($line_item->commerce_product[LANGUAGE_NONE][0]['product_id']);
             // Set CGST.
-            $entity->cgst = $entity->cgst + $variant->field_cgst[LANGUAGE_NONE][0]['value'];
+            $entity->cgst = (!empty($variant->field_cgst[LANGUAGE_NONE][0]['value'])) ? $entity->cgst + $variant->field_cgst[LANGUAGE_NONE][0]['value'] : $entity->cgst;
             // Set SGST.
-            $entity->sgst = $entity->sgst + $variant->field_sgst[LANGUAGE_NONE][0]['value'];
+            $entity->sgst = (!empty($variant->field_sgst[LANGUAGE_NONE][0]['value'])) ? $entity->sgst + $variant->field_sgst[LANGUAGE_NONE][0]['value'] : $entity->sgst;
             // Set IGST.
-            //$entity->igst = $variant->field_igst[LANGUAGE_NONE][0]['value'];
+            $entity->igst = (!empty($variant->field_igst[LANGUAGE_NONE][0]['value'])) ? $entity->igst + $variant->field_igst[LANGUAGE_NONE][0]['value'] : $entity->igst;
             // Set ECGST.
-            $entity->ecgst = $entity->ecgst + $variant->field_e_cgst[LANGUAGE_NONE][0]['value'];
+            // $entity->ecgst = $entity->ecgst + $variant->field_e_cgst[LANGUAGE_NONE][0]['value'];
             // Set ESGST.
-            $entity->esgst = $entity->esgst + $variant->field_e_sgst[LANGUAGE_NONE][0]['value'];
+            // $entity->esgst = $entity->esgst + $variant->field_e_sgst[LANGUAGE_NONE][0]['value'];
             // Set EIGST.
             //$entity->eigst = $variant->field_e_igst[LANGUAGE_NONE][0]['value'];
             $query = new EntityFieldQuery;
@@ -1923,5 +1898,198 @@ function bombayliving_user_login(&$edit, $account) {
         'fragment' => 'edit-timezone',
       )),
     )));
+  }
+}
+/**
+ * Implementation of hook_mail_alter
+ * Rewrites some outbound email links to use the frontend website instead of the api
+ */
+function bombayliving_mail_alter(&$message) {
+  if(
+    // Don't act on non-account bound emails
+    empty($message['params']['account'])
+    // Don't act on administrator accounts
+    || empty($message['params']['account']->roles)
+    || in_array(ADMINISTRATOR_ROLE_RID, $message['params']['account']->roles)
+  ){
+    return;
+  }
+
+  // Replace specific links with our new ones
+  switch($message['id']){
+  	case 'user_password_reset':
+         __hook_mail_alter__user_password_reset($message);
+  	break;
+  }
+}
+
+/**
+ * Sub-implementation of hook_mail_alter
+ */
+function __hook_mail_alter__user_password_reset(&$message){
+  // Rewrite the user login link
+  $message['body'] = str_replace(
+    'bombayliving.co.in/api/user/reset/'
+    ,'bombayliving.co.in/reset-password/'
+    ,$message['body']
+  );
+}
+
+function bombayliving_services_resources() {
+  $resources = array();
+
+  //Include the necessary inc files.
+  module_load_include('inc', 'bombayliving', 'include/bombayliving.resources');
+
+  //Service Apis for contents.
+  $resources += bombayliving_services_resource();
+
+  $resource_file_path = '/users/users.resources';
+
+  // Declared by services core
+  // $resources['user'] = array();
+  // $resources['user']['actions'] = array();
+  $resources['user']['actions']['update_password'] = array(
+    'help' => 'Exposes a method for updating a user\'s password based on password reset emails.',
+    'file' => array('type' => 'inc', 'module' => 'custom', 'name' => $resource_file_path),
+    'callback' => '_user_resource_update_password',
+    'access callback file' => array('type' => 'inc', 'module' => 'services', 'name' => 'resources/system_resource'),
+    'access callback' => 'services_access_menu',
+    'args' => array(
+      array(
+        'name' => 'uid',
+        'optional' => FALSE,
+        'type' => 'int',
+        'description' => 'The uid of the user in the operation.',
+        'source' => array('data' => 'uid'),
+      ),
+      array(
+        'name' => 'timestamp',
+        'optional' => FALSE,
+        'type' => 'int',
+        'description' => 'The timestamp value from the reset password link.',
+        'source' => array('data' => 'timestamp'),
+      ),
+      array(
+        'name' => 'hashed_pass',
+        'optional' => FALSE,
+        'type' => 'string',
+        'description' => 'The hashed pass value from the reset password link.',
+        'source' => array('data' => 'hashed_pass'),
+      ),
+      array(
+        'name' => 'password',
+        'optional' => TRUE,
+        'type' => 'string',
+        'description' => 'The hashed pass value from the reset password link.',
+        'default_value' => '',
+        'source' => array('data' => 'password'),
+      ),
+    ),
+  );
+
+  return $resources;
+}
+
+/**
+ * Provides a method for changing the user's password using
+ * parameters from a reset password email link
+ *
+ * Security precautions take place at all times.
+ * If a password is provided, an update is attempted.
+ * If no password is provided, it simply checks if the link is valid
+ *
+ * @param int $uid
+ * @param int $timestamp
+ * @param string $hashed_pass
+ * @param string $password
+ *
+ * @see user_pass_reset in user.pages.inc
+ */
+function _user_resource_update_password($uid, $timestamp, $hashed_pass, $password){
+  global $user;
+
+  // When processing the one-time login link, we have to make sure that a user
+  // isn't already logged in.
+  if ($user->uid) {
+    // The existing user is already logged in.
+    if ($user->uid == $uid) {
+      return services_error(t('You are logged in as %user. Please edit your profile to update your password.', array('%user' => $user->name)), 406);
+    }
+    // A different user is already logged in on the computer.
+    else {
+      $reset_link_account = user_load($uid);
+      if (!empty($reset_link_account)) {
+        return services_error(t('Another user (%other_user) is already logged into the site on this computer, but you tried to use a one-time link for user %resetting_user. Please <a href="!logout">logout</a> and try using the link again.', array('%other_user' => $user->name, '%resetting_user' => $reset_link_account->name, '!logout' => url('user/logout'))), 406);
+      }
+      else {
+        // Invalid one-time link specifies an unknown user.
+        return services_error(t('The one-time login link you clicked is invalid.'), 406);
+      }
+    }
+  }
+  else {
+    // Time out, in seconds, until login URL expires. Defaults to 24 hours =
+    // 86400 seconds.
+    $timeout = variable_get('user_password_reset_timeout', 86400);
+    $current = REQUEST_TIME;
+    // Some redundant checks for extra security ?
+    $users = user_load_multiple(array($uid), array('status' => '1'));
+    if ($timestamp <= $current && $account = reset($users)) {
+      // No time out for first time login.
+      if ($account->login && $current - $timestamp > $timeout) {
+        return services_error(t('You have tried to use a one-time login link that has expired. Please request a new one.'), 406);
+      }
+      elseif ($account->uid && $timestamp >= $account->login && $timestamp <= $current && $hashed_pass == user_pass_rehash($account->pass, $timestamp, $account->login, $account->uid)) {
+        // First stage is a confirmation form, then login
+        if (!empty($password)) {
+          // Bootstrap sessions, because the user_profile_form_submit expects it
+          // @see user_pass_reset Line 139
+          require_once DRUPAL_ROOT . '/includes/bootstrap.inc';
+          drupal_bootstrap(DRUPAL_BOOTSTRAP_SESSION);
+
+          // Submit the password form programatically so we get
+          // all other validation in the system against the passwords
+          module_load_include('pages.inc', 'user');
+          $form_state = array();
+          $form_state['values']['pass']['pass1'] = $password;
+          $form_state['values']['pass']['pass2'] = $password;
+          $form_state['values']['op'] = t('Save');
+
+          $token = drupal_random_key();
+          $_SESSION['pass_reset_' . $account->uid] = $token;
+
+          drupal_form_submit('user_profile_form', $form_state, $account, 'account');
+          $errors = form_get_errors();
+          if( $errors ){
+            return services_error('Error updating password', 406, $errors);
+          }
+
+          watchdog('user', 'User %name used one-time login link at time %timestamp.', array('%name' => $account->name, '%timestamp' => $timestamp));
+
+          // Updates the login timestamp of the user,
+          // which invalidates further use of the one-time login link
+          db_update('users')
+            ->fields(array('login' => REQUEST_TIME))
+            ->condition('uid', $user->uid)
+            ->execute();
+          return TRUE;
+        }
+        else {
+          return array(
+            'user_name' => $account->name,
+            'expiration_date' => format_date($timestamp + $timeout)
+          );
+        }
+      }
+      else {
+        return services_error(t('You have tried to use a one-time login link that has either been used or is no longer valid. Please request a new one.'), 406);
+      }
+    }
+    else {
+      // Deny access, no more clues.
+      // Everything will be in the watchdog's URL for the administrator to check.
+      return services_error(t('Access denied.'), 403);
+    }
   }
 }
