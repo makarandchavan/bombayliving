@@ -530,10 +530,10 @@ function user_subscribe_newsletter(){
   $path_args = arg();
   $uid = $path_args[2];
   $isSubscribing = $params['isSubscribing'];
-  
+
   if($uid != 1 || $uid != 0) {
-    $user = user_load($uid);  
-  
+    $user = user_load($uid);
+
     if($isSubscribing == 'true'){
        /* $subscriber = entity_get_controller('newsletter_subscriber')->create();
         $subscriber->email = $user->mail;
@@ -541,7 +541,7 @@ function user_subscribe_newsletter(){
         $subscriber->firstname = $user->name;
         $subscriber->receive_format = 'html';
         $needs_confirm = FALSE;*/
-        
+
         $form_state = array();
         $form_state['values']['field_newsletter_list'][LANGUAGE_NONE][0]['target_id'] = 2;
         $form_state['values']['email'] = $user->mail;
@@ -550,28 +550,29 @@ function user_subscribe_newsletter(){
         $form_state['values']['confirmed'] = 1;
         $form_state['values']['op'] = 'Subscribe';
         $form_state['values']['submit'] = 'Subscribe';
-        
+
         $form = drupal_get_form('newsletter_subscriber_edit');
         // field_attach_submit('newsletter_subscriber', $subscriber, $form, $form_state);
-    
+
         // $added_subscriber = entity_get_controller('newsletter_subscriber')->save($subscriber, $needs_confirm);
         module_load_include('inc', 'newsletter', 'includes/newsletter.pages');
         // $confirmed = newsletter_confirm($subscriber);
-        
+
         //drupal_form_submit('newsletter_manage_subscriptions_form_submit', $form_state);
         if (!valid_email_address($form_state['values']['email'])) {
-            print "This e-mail doesn't exist.";
+          print json_encode(array('error' => array('code' => 404, 'message' => 'Invalid email')));exit;
         }
         elseif(newsletter_is_subscribed($user->mail)) {
-            print 'error: '.$user->mail.' is already subscribed';exit;
+            print json_encode(array('error' => array('code' => 404, 'message' => $user->mail.' is already subscribed')));exit;
         }
         else {
             newsletter_manage_subscriptions_form_submit($form, $form_state);
-            print 'success';exit;
+            print json_encode(array('true'));exit;
         }
     }
     elseif($isSubscribing == 'false'){
-        $subscriber_array = newsletter_subscriber_load(array(), array('uid' => $uid));
+        $subscriber_array = newsletter_subscriber_load(0, array('uid' => $uid));
+      echo "<pre>";print_r($subscriber_array);exit;
         if($subscriber_array){
             foreach($subscriber_array as $sub_obj){
                 $subscriber = $sub_obj;
@@ -585,11 +586,13 @@ function user_subscribe_newsletter(){
             }
         }
         else{
-            print 'Error: No user subscribed';exit;
+          print json_encode(array('error' => array('code' => 404, 'message' => 'User not subscribed.')));
+          exit;
         }
     }
     else{
-        print 'Missing parameters: isSubscribing';exit;
+      print json_encode(array('error' => array('code' => 404, 'message' => 'Missing parameters: isSubscribing')));
+      exit;
     }
   }
 }

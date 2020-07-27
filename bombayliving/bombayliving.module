@@ -399,7 +399,17 @@ function bombayliving_menu() {
     ),
     'type' => MENU_CALLBACK,
   );
-  
+
+  $items['blapi/get-payment-link/%'] = array(
+    'title' => 'Get Payment link',
+    'page callback' => 'bombayliving_get_checkout_payment_methods',
+    'page arguments' => array(2),
+    'access arguments' => array(
+      'access content',
+    ),
+    'type' => MENU_CALLBACK,
+  );
+
   return $items;
 }
 
@@ -424,11 +434,11 @@ function _download_invoice($uid = NULL, $oid = NULL) {
   $html = file_get_contents($base_url . '/user/' . $uid . '/orders/' . $oid . '/print?str=' . mt_rand());
   $dompdf->loadHtml($html);
   
-  // (Optional) Setup the paper size and orientation 
+  // (Optional) Setup the paper size and orientation
   $dompdf->setPaper('A4', 'portrait'); 
-  
+
   // Render the HTML as PDF 
-  $dompdf->render(); 
+  $dompdf->render();
   
   // Output the generated PDF (1 = download and 0 = preview) 
   $dompdf->stream("Invoice-". $oid, array("Attachment" => 1));
@@ -2093,3 +2103,31 @@ function _user_resource_update_password($uid, $timestamp, $hashed_pass, $passwor
     }
   }
 }
+
+
+function bombayliving_get_checkout_payment_methods($order_id = NULL){
+  $order = commerce_order_load($order_id);
+  if(isset($order->payment_methods)){
+      //already set
+  }else{
+      $order->payment_methods = array();
+      rules_invoke_all('commerce_payment_methods', $order);
+
+  }
+  $ret = array();
+  foreach ($order->payment_methods as $instance_id => $method_info) {
+      // Ensure we've received a valid payment method that can be used on the
+      // checkout form.
+      if ($payment_method = commerce_payment_method_load($method_info['method_id'])) {
+          if (!empty($payment_method['checkout'])) {
+              $ret[$instance_id] = $payment_method;
+          }
+      }
+  }
+  print json_encode($ret);exit;
+}
+
+function bombayliving_form_commerce_cart_add_to_cart_form_alter(&$form, &$form_state) {
+  $form_state['line_item']->data['context']['add_to_cart_combine'] = TRUE;
+  return $form;
+  }
