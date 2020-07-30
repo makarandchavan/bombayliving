@@ -780,7 +780,35 @@ function _wishlist(){
       $wishlist = commerce_wishlist_order_load($user->uid);
       if(!empty($wishlist)) {
         foreach($wishlist->commerce_line_items['und'] as $line_item) {
-          $wishlist_data[] = commerce_line_item_load($line_item['line_item_id']);
+          $line_item = commerce_line_item_load($line_item['line_item_id']);
+          if(!empty($line_item->commerce_product[LANGUAGE_NONE][0]['product_id'])) {
+            $variant = commerce_product_load($line_item->commerce_product[LANGUAGE_NONE][0]['product_id']);
+            $query = new EntityFieldQuery;
+            $query->entityCondition('entity_type', 'node', '=')
+            ->propertyCondition('type', array('bags_cases', 'drinks'), 'IN')
+            ->fieldCondition('field_product', 'product_id', $line_item->commerce_product[LANGUAGE_NONE][0]['product_id'], '=')
+            ->range(0, 1);
+            $result = $query->execute();
+            if(!empty($result)) {
+              $nid = array_shift($result['node']);
+              $node = node_load($nid->nid);
+              if(!empty($node)) {
+                $line_item->details['Product_Name'] = $node->title;
+                $line_item->details['Size'] = (!empty($variant->field_size['und'][0]['tid'])) ? taxonomy_term_load($variant->field_size['und'][0]['tid'])->name : '';
+                $line_item->details['Fill'] = (!empty($variant->field_fill['und'][0]['tid'])) ? taxonomy_term_load($variant->field_fill['und'][0]['tid'])->name : '';
+                $line_item->details['Fabric'] = (!empty($variant->field_material['und'][0]['tid'])) ? taxonomy_term_load($variant->field_material['und'][0]['tid'])->name : '';
+                $line_item->details['Max_Quanity'] = !empty($variant->field_category_color['und'][0]['value']) ? $variant->field_category_color['und'][0]['value'] : '99999';
+                $line_item->details['Stock'] = !empty($variant->commerce_stock['und'][0]['value']) ? $variant->commerce_stock['und'][0]['value'] : '99999';
+                $line_item->details['Image'] = file_create_url($node->field_images[LANGUAGE_NONE][0]['uri']);
+                if(!empty($swatch_name)) {
+                  $line_item->field_selected_swatch_name = $swatch_name->name;
+                  $line_item->details['Swatch'] = $swatch_name->name;
+                  $line_item->details['Swatch_Image'] = file_create_url($swatch_name->field_single_image[LANGUAGE_NONE][0]['uri']);
+                }
+              }
+            }
+            $wishlist_data[] = $line_item;
+          }
         }
       }
       print json_encode($wishlist_data);exit;

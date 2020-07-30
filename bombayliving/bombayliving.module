@@ -234,14 +234,15 @@ function bombayliving_menu() {
     'page callback' => 'contact_category_edit_form_submit',
     'access arguments' => array(
       'access content',
-    ),    
+    ),
     'type' => MENU_CALLBACK,
     'file' => 'contact.admin.inc',
   );
-  
-  $items['blapi/ccavenue'] = array(
+
+  $items['blapi/ccavenue/%'] = array(
     'title' => 'CC-Avenue',
     'page callback' => '_payment_redirection',
+    'page arguments' => array(2),
     'access arguments' => array(
       'access content',
     ),
@@ -400,14 +401,15 @@ function bombayliving_menu() {
     'type' => MENU_CALLBACK,
   );
 
-  $items['blapi/get-payment-link/%'] = array(
-    'title' => 'Get Payment link',
-    'page callback' => 'bombayliving_get_checkout_payment_methods',
-    'page arguments' => array(2),
+  $items['process-payment/%/%'] = array(
+    'page arguments' => array('bombayliving_get_checkout_payment_methods', 1,2),
     'access arguments' => array(
       'access content',
     ),
     'type' => MENU_CALLBACK,
+    'title' => t('Redirect to payment gateway') ,
+		'description' => t('Redirect to payment gateway') ,
+		'page callback' => 'drupal_get_form',
   );
 
   return $items;
@@ -675,44 +677,8 @@ function _update_order($uid = NULL, $order_id = NULL){
 /**
  * Administration forms form payment method.
  */
-function _payment_redirection() {
-    var_dump($_POST);
-    die;
-//   $form = array();
-//   $settings = (array) $settings;
-
-//   $form['merchant_id'] = array(
-//     '#type' => 'textfield',
-//     '#title' => t('Merchant id'),
-//     '#default_value' => $settings['merchant_id'],
-//     '#required' => TRUE,
-//   );
-
-//   $form['working_key'] = array(
-//     '#type' => 'textfield',
-//     '#title' => t('CCavenue Working key'),
-//     '#default_value' => $settings['working_key'],
-//     '#required' => TRUE,
-//   );
-
-//   $form['access_code'] = array(
-//     '#type' => 'textfield',
-//     '#title' => t('CCavenue Access Code'),
-//     '#default_value' => $settings['access_code'],
-//     '#required' => TRUE,
-//   );
-
-//   $form['ccavenue_server'] = array(
-//     '#type' => 'select',
-//     '#title' => t('Payment Mode'),
-//     '#description' => t('The Available list of CCAvenue Servers'),
-//     '#options' => array(
-//       'https://secure.ccavenue.com/transaction/transaction.do?command=initiateTransaction' => ('Live'),
-//       'https://test.ccavenue.com/transaction/transaction.do?command=initiateTransaction' => ('Test'),
-//     ),
-//     '#default_value' => $settings['ccavenue_server'],
-//   );
-    var_dump($_POST);
+function _payment_redirection($order_id = NULL) {
+  $order = commerce_order_load($order_id);
   return $_POST;
 }
 
@@ -2105,29 +2071,79 @@ function _user_resource_update_password($uid, $timestamp, $hashed_pass, $passwor
 }
 
 
-function bombayliving_get_checkout_payment_methods($order_id = NULL){
+function bombayliving_get_checkout_payment_methods($form, &$form_state, $order_id = NULL, $uid = NULL){
+  $logindata['uid'] = $uid;
+  user_login_finalize($logindata);
+  drupal_session_regenerate();
   $order = commerce_order_load($order_id);
+
   if(isset($order->payment_methods)){
       //already set
   }else{
-      $order->payment_methods = array();
-      rules_invoke_all('commerce_payment_methods', $order);
-
+    $order->payment_methods = array();
+    rules_invoke_all('commerce_payment_methods', $order);
   }
-  $ret = array();
   foreach ($order->payment_methods as $instance_id => $method_info) {
-      // Ensure we've received a valid payment method that can be used on the
-      // checkout form.
-      if ($payment_method = commerce_payment_method_load($method_info['method_id'])) {
-          if (!empty($payment_method['checkout'])) {
-              $ret[$instance_id] = $payment_method;
-          }
-      }
+    $instance_id = $instance_id;
+    break;
   }
-  print json_encode($ret);exit;
+
+  $payment_method = commerce_payment_method_instance_load($instance_id);
+  $shipping_id = $order->commerce_customer_billing['und'][0]['profile_id'];
+  $billing_address = commerce_customer_profile_load($shipping_id);
+  $wrapper = entity_metadata_wrapper('commerce_order', $order);
+
+  // Get financial info.
+  $currency_code = $wrapper->commerce_order_total->currency_code->value();
+  $order_data = array(
+    'merchant_id' => $payment_method['settings']['merchant_id'],
+    'amount' => $wrapper->commerce_order_total->amount->value() / 100,
+    'order_id' => $order->order_id,
+    'cancel_url' => url('checkout/' . $order->order_id . '/payment/back/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
+    'redirect_url' => url('checkout/' . $order->order_id . '/payment/return/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
+    'working_key' => $payment_method['settings']['working_key'],
+    'access_code' => $payment_method['settings']['access_code'],
+    'language' => 'EN',
+    'currency' => $currency_code,
+    'billing_name' => $billing_address['name_line'],
+    'billing_address' => $billing_address['thoroughfare']. ' ' . $billing_address['premise'] . ' ' . $billing_address['sub_premise'],
+    'billing_zip' => $billing_address['postal_code'],
+    'billing_city' => $billing_address['locality'],
+    'billing_state' => $billing_address['administrative_area'],
+    'billing_country' => $billing_address['country'],
+  );
+  echo "<pre>";print_r($order_data);exit;
+  $merchant_data = '';
+  foreach ($order_data as $key => $value) {
+    if ($key == 'working_key' || $key == 'access_code') {
+      continue;
+    }
+    $merchant_data .= $key . '=' . $value . '&';
+  }
+  // Add encrypted data to ordered data array.
+  $order_data['encRequest'] = _commerce_ccavenue_encrypt($merchant_data, $order_data['working_key']);
+  // Select the URL for form submission.
+  $form['encRequest'] = array(
+  	'#type' => 'hidden',
+  	'#attributes' => array('name' => 'encRequest'),
+  	'#value' => $order_data['encRequest'],
+  );
+
+  $form['access_code'] = array(
+  	'#type' => 'hidden',
+  	'#attributes' => array('name' => 'access_code'),
+  	'#value' => $order_data['access_code'],
+  );
+
+  $form['#action'] = $payment_method['settings']['ccavenue_server'];
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => 'Submit',
+  );
+  return $form;
 }
 
 function bombayliving_form_commerce_cart_add_to_cart_form_alter(&$form, &$form_state) {
   $form_state['line_item']->data['context']['add_to_cart_combine'] = TRUE;
   return $form;
-  }
+}
