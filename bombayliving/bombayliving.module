@@ -1041,7 +1041,7 @@ function _get_product_by_id($nid) {
           $sku_r = str_replace(" ", "", $variant->sku);
           $prods[$sku_r] = $variant;
         }
-        $skus[] = $variant->sku; 
+        $skus[] = $variant->sku;
       }
       // Update product variants.
       foreach($variants as $variant) {
@@ -1099,7 +1099,7 @@ function _get_product_by_id($nid) {
       }
 
       ksort($variants);
-      
+
       foreach($variants as $variant) {
         $size = !empty($variant->field_size[LANGUAGE_NONE][0]['tid']) ? taxonomy_term_load($variant->field_size[LANGUAGE_NONE][0]['tid']) : '';
         $fill = !empty($variant->field_fill[LANGUAGE_NONE][0]['tid']) ? taxonomy_term_load($variant->field_fill[LANGUAGE_NONE][0]['tid']) : '';
@@ -1232,7 +1232,7 @@ function _get_swatch_by_id($nid) {
             $images[] = file_create_url($image['uri']);
           }
         }
-        
+
         foreach($variants as $variant) {
           $products[$nid]['variants'][] = array(
             'variantid' => $variant->product_id,
@@ -2072,10 +2072,17 @@ function _user_resource_update_password($uid, $timestamp, $hashed_pass, $passwor
 
 
 function bombayliving_get_checkout_payment_methods($form, &$form_state, $order_id = NULL, $uid = NULL){
-  $logindata['uid'] = $uid;
-  user_login_finalize($logindata);
-  drupal_session_regenerate();
+  // $query = "select * from sessions where uid=:uid";
+  // $result = db_query($query,array("uid" => $uid))->fetchAll();
+  // list($index,$userOb)=each($result);
+  // session_id($userOb->sid);
+  // drupal_session_started($userOb->sid);
+
   $order = commerce_order_load($order_id);
+  if (empty($order->data['payment_redirect_key'])) {
+    $order->data['payment_redirect_key'] = drupal_hash_base64(time());
+    $order = commerce_order_save($order);
+  }
 
   if(isset($order->payment_methods)){
       //already set
@@ -2090,14 +2097,14 @@ function bombayliving_get_checkout_payment_methods($form, &$form_state, $order_i
 
   $payment_method = commerce_payment_method_instance_load($instance_id);
   $shipping_id = $order->commerce_customer_billing['und'][0]['profile_id'];
-  $billing_address = commerce_customer_profile_load($shipping_id);
-  $wrapper = entity_metadata_wrapper('commerce_order', $order);
-
+  $billing_address_data = commerce_customer_profile_load($shipping_id);
+  $billing_address = $billing_address_data->commerce_customer_address['und'][0];
   // Get financial info.
-  $currency_code = $wrapper->commerce_order_total->currency_code->value();
+  $currency_code = $order->commerce_order_total['und'][0]['currency_code'];
+
   $order_data = array(
     'merchant_id' => $payment_method['settings']['merchant_id'],
-    'amount' => $wrapper->commerce_order_total->amount->value() / 100,
+    'amount' => $order->commerce_order_total['und'][0]['amount'] / 100,
     'order_id' => $order->order_id,
     'cancel_url' => url('checkout/' . $order->order_id . '/payment/back/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
     'redirect_url' => url('checkout/' . $order->order_id . '/payment/return/' . $order->data['payment_redirect_key'], array('absolute' => TRUE)),
@@ -2112,7 +2119,7 @@ function bombayliving_get_checkout_payment_methods($form, &$form_state, $order_i
     'billing_state' => $billing_address['administrative_area'],
     'billing_country' => $billing_address['country'],
   );
-  echo "<pre>";print_r($order_data);exit;
+
   $merchant_data = '';
   foreach ($order_data as $key => $value) {
     if ($key == 'working_key' || $key == 'access_code') {
@@ -2138,12 +2145,90 @@ function bombayliving_get_checkout_payment_methods($form, &$form_state, $order_i
   $form['#action'] = $payment_method['settings']['ccavenue_server'];
   $form['submit'] = array(
     '#type' => 'submit',
-    '#value' => 'Submit',
+    '#value' => 'Pay',
+  );
+  $form['#attached']['js'][] = array(
+    'type' => 'inline',
+    'data' => 'jQuery(document).ready(function () { jQuery("#edit-submit").trigger("click"); });',
+    'scope' => 'footer',
+    'group' => JS_THEME,
+    'weight' => 5,
   );
   return $form;
+}
+
+function bombayliving_commerce_checkout_complete($order) {
+  echo "<pre>";print_r($order);exit;
 }
 
 function bombayliving_form_commerce_cart_add_to_cart_form_alter(&$form, &$form_state) {
   $form_state['line_item']->data['context']['add_to_cart_combine'] = TRUE;
   return $form;
 }
+
+// hook for commerce product save.
+// function bombayliving_entity_insert($entity, $type) {
+//   // Check if product type.
+//   if($type == 'node' && $entity->type == 'bags_cases') {
+//     echo "<pre>";print_r($entity); echo "</pre>";exit;
+//   }
+// }
+
+// function bombayliving_entity_presave($entity, $type) {
+//   // Check if product type.
+//   if($type == 'node' && $entity->type == 'bags_cases') {
+//     $products = $variants = $relatedProducts = [];
+//     // Get basic information about our fields.
+//     $info_texts = node_load_multiple(array(), array('type' => 'information_text_s', 'status' => 1));
+//     $info_texts = array_shift($info_texts);
+
+//     foreach($entity->field_product[LANGUAGE_NONE] as $variant) {
+//       $vts[] = $variant['product_id'];
+//     }
+//     $variants = commerce_product_load_multiple($vts);
+//     foreach($variants as $variant) {
+//       $skus[] = $variant->sku;
+//     }
+//     $prods = $existing_prod = array();
+//     foreach($variants as $variant) {
+//       $find_match = substr($variant->sku, -2);
+//       if($find_match == ' F') {
+//         $existing_prod[] = $variant->product_id;
+//       }
+//       else if($find_match == ' L') {
+//         $existing_prod[] = $variant->product_id;
+//       }
+//       else {
+//         $sku_r = str_replace(" ", "", $variant->sku);
+//         $prods[$sku_r] = $variant;
+//       }
+//       $skus[] = $variant->sku;
+//     }
+//     // Update product variants.
+//     foreach($variants as $variant) {
+//       $prod_match = trim(substr($variant->sku, 0, 10));
+//       if(!empty($prod_match)) {
+//         $stock_prod = commerce_product_load_by_sku($prod_match);
+//       }
+//       if(!in_array($variant->product_id, $existing_prod)) {
+//         $sku_r = str_replace(" ", "", $variant->sku);
+//         // Check if other variants created, else create other variants based on amounts entered.
+//         if(!empty($variant->field_velvet[LANGUAGE_NONE][0]['value']) && is_numeric($variant->field_velvet[LANGUAGE_NONE][0]['value']) && (substr($variant->sku, -2) == ' V') && in_array($variant->sku, $skus)) {
+//           bombayliving_update_product_variants($variant, $prods[$sku_r], 56, $variant->field_velvet[LANGUAGE_NONE][0]['value'], $stock_prod->commerce_stock[LANGUAGE_NONE][0]['value'], 'V', $stock_prod);
+//         }
+//         if(!empty($variant->field_texture[LANGUAGE_NONE][0]['value']) && is_numeric($variant->field_texture[LANGUAGE_NONE][0]['value']) && (substr($variant->sku, -2) == ' T') && in_array($variant->sku, $skus)) {
+//           bombayliving_update_product_variants($variant, $prods[$sku_r], 61, $variant->field_texture[LANGUAGE_NONE][0]['value'], $stock_prod->commerce_stock[LANGUAGE_NONE][0]['value'], 'T', $stock_prod);
+//         }
+//         if(!empty($variant->field_leather_mastro[LANGUAGE_NONE][0]['value']) && is_numeric($variant->field_leather_mastro[LANGUAGE_NONE][0]['value']) && (substr($variant->sku, -2) == 'LM') && in_array($variant->sku, $skus)) {
+//           bombayliving_update_product_variants($variant, $prods[$sku_r], 100, $variant->field_leather_mastro[LANGUAGE_NONE][0]['value'], $stock_prod->commerce_stock[LANGUAGE_NONE][0]['value'], 'LM', $stock_prod);
+//         }
+//         if(!empty($variant->field_leather_vagabond[LANGUAGE_NONE][0]['value']) && is_numeric($variant->field_leather_vagabond[LANGUAGE_NONE][0]['value']) && (substr($variant->sku, -2) == 'LV') && in_array($variant->sku, $skus)) {
+//           bombayliving_update_product_variants($variant, $prods[$sku_r], 101, $variant->field_leather_vagabond[LANGUAGE_NONE][0]['value'], $stock_prod->commerce_stock[LANGUAGE_NONE][0]['value'], 'LV', $stock_prod);
+//         }
+//         if(!empty($variant->field_leather_tango[LANGUAGE_NONE][0]['value']) && is_numeric($variant->field_leather_tango[LANGUAGE_NONE][0]['value']) && (substr($variant->sku, -2) == 'LT') && in_array($variant->sku, $skus)) {
+//           bombayliving_update_product_variants($variant, $prods[$sku_r], 102, $variant->field_leather_tango[LANGUAGE_NONE][0]['value'], $stock_prod->commerce_stock[LANGUAGE_NONE][0]['value'], 'LT', $stock_prod);
+//         }
+//       }
+//     }
+//   }
+// }
